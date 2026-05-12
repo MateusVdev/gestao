@@ -13,8 +13,10 @@ import {
   FileSpreadsheet,
   FileText,
   History,
+  MoreVertical,
   PackageCheck,
   PackagePlus,
+  Plus,
   PlusCircle,
   Save,
   Search,
@@ -24,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { Section } from "@/components/page";
-import { cn, currency, date } from "@/lib/format";
+import { cn, currency, date, stockRisk, stockRiskClass } from "@/lib/format";
 import type { PartStock, StockMovement, Supplier } from "@/lib/types";
 
 type HttpMethod = "POST" | "PUT";
@@ -134,9 +136,20 @@ function SuccessMessage({ message }: { message: string }) {
   );
 }
 
-function Badge({ children, className }: { children: React.ReactNode; className: string }) {
+function Badge({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className: string;
+}) {
   return (
-    <span className={cn("inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-medium", className)}>
+    <span
+      className={cn(
+        "inline-flex h-6 items-center rounded-full border px-2.5 text-[10px] font-bold uppercase tracking-wider",
+        className,
+      )}
+    >
       {children}
     </span>
   );
@@ -167,6 +180,69 @@ function IconButton({
       <Icon size={14} />
       {children}
     </button>
+  );
+}
+
+function ActionsDropdown({
+  onDelete,
+  onEdit,
+  onEntry,
+  onHistory,
+}: {
+  onDelete: () => void;
+  onEdit: () => void;
+  onEntry: () => void;
+  onHistory: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        className={cn(
+          "grid h-8 w-8 place-items-center rounded-[8px] border border-white/10 text-zinc-400 transition",
+          open ? "bg-white/10 text-white" : "hover:bg-white/5 hover:text-zinc-200",
+        )}
+        onClick={() => setOpen(!open)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        type="button"
+      >
+        <MoreVertical size={16} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-10 mt-1 w-48 animate-in fade-in zoom-in-95 duration-200 origin-top-right rounded-[8px] border border-white/10 bg-[#1a1f1d] p-1 shadow-2xl">
+          <button
+            className="flex w-full items-center gap-2 rounded-[6px] px-3 py-2 text-left text-xs font-medium text-zinc-300 transition hover:bg-white/5 hover:text-white"
+            onClick={onEdit}
+          >
+            <Edit3 size={14} />
+            Editar peca
+          </button>
+          <button
+            className="flex w-full items-center gap-2 rounded-[6px] px-3 py-2 text-left text-xs font-medium text-teal-300 transition hover:bg-teal-400/10"
+            onClick={onEntry}
+          >
+            <PackagePlus size={14} />
+            Registrar entrada
+          </button>
+          <button
+            className="flex w-full items-center gap-2 rounded-[6px] px-3 py-2 text-left text-xs font-medium text-zinc-300 transition hover:bg-white/5 hover:text-white"
+            onClick={onHistory}
+          >
+            <History size={14} />
+            Ver historico
+          </button>
+          <div className="my-1 border-t border-white/5" />
+          <button
+            className="flex w-full items-center gap-2 rounded-[6px] px-3 py-2 text-left text-xs font-medium text-rose-400 transition hover:bg-rose-400/10"
+            onClick={onDelete}
+          >
+            <Trash2 size={14} />
+            Excluir item
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -437,9 +513,9 @@ function HistoryModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="app-surface max-h-[82vh] w-full max-w-3xl overflow-hidden rounded-[8px]">
+      <div className="app-surface max-h-[82vh] w-full max-w-3xl overflow-hidden rounded-[8px] shadow-2xl">
         <div className="flex items-center justify-between gap-4 border-b border-white/10 p-4">
-          <PanelTitle icon={History} meta={`${movements.length} movimentacoes`} title={part.name} />
+          <PanelTitle icon={History} meta={`${movements.length} movimentacoes registradas`} title={part.name} />
           <button
             className="grid h-9 w-9 place-items-center rounded-[8px] border border-white/10 text-zinc-300 transition hover:bg-white/7"
             onClick={onClose}
@@ -448,39 +524,42 @@ function HistoryModal({
             <X size={17} />
           </button>
         </div>
-        <div className="max-h-[60vh] overflow-auto p-4">
+        <div className="max-h-[60vh] overflow-auto p-5">
           {movements.length ? (
             <table className="w-full min-w-[620px] text-left text-sm">
-              <thead className="text-xs uppercase tracking-[0.12em] text-zinc-500">
-                <tr className="border-b border-white/10">
-                  <th className="py-3 pr-4 font-medium">Tipo</th>
-                  <th className="py-3 pr-4 font-medium">Quantidade</th>
-                  <th className="py-3 pr-4 font-medium">Valor unit.</th>
-                  <th className="py-3 pr-4 font-medium">Total</th>
-                  <th className="py-3 pr-4 font-medium">Data</th>
-                  <th className="py-3 pr-4 font-medium">Responsavel</th>
+              <thead>
+                <tr className="border-b border-white/10 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                  <th className="py-3 pr-4">Natureza</th>
+                  <th className="py-3 pr-4 text-right">Qtd</th>
+                  <th className="py-3 pr-4 text-right">Unitario</th>
+                  <th className="py-3 pr-4 text-right">Total</th>
+                  <th className="py-3 pr-4 text-center">Data</th>
+                  <th className="py-3 pr-4">Operador</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-white/5">
                 {movements.map((movement) => (
-                  <tr className="border-b border-white/6 last:border-0" key={movement.id}>
+                  <tr className="transition hover:bg-white/[0.02]" key={movement.id}>
                     <td className="py-3 pr-4">
                       <Badge className={movement.kind === "IN" ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : "border-rose-400/30 bg-rose-400/10 text-rose-200"}>
                         {movement.kind === "IN" ? "Entrada" : "Saida"}
                       </Badge>
                     </td>
-                    <td className="py-3 pr-4 text-zinc-300">{movement.quantity}</td>
-                    <td className="py-3 pr-4 text-zinc-300">{currency(movement.unitCost)}</td>
-                    <td className="py-3 pr-4 font-medium text-white">{currency(movement.totalValue)}</td>
-                    <td className="py-3 pr-4 text-zinc-400">{date(movement.date)}</td>
-                    <td className="py-3 pr-4 text-zinc-400">{movement.responsibleUser}</td>
+                    <td className="py-3 pr-4 text-right font-bold text-white">{movement.quantity}</td>
+                    <td className="py-3 pr-4 text-right text-zinc-400">{currency(movement.unitCost)}</td>
+                    <td className="py-3 pr-4 text-right font-bold text-teal-300">{currency(movement.totalValue)}</td>
+                    <td className="py-3 pr-4 text-center text-zinc-500">{date(movement.date)}</td>
+                    <td className="py-3 pr-4 text-zinc-400 font-medium">{movement.responsibleUser}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
-            <EmptyState>Nenhum historico para esta peca.</EmptyState>
+            <EmptyState>Nenhum historico de movimentacao para esta peca.</EmptyState>
           )}
+        </div>
+        <div className="border-t border-white/10 p-4 flex justify-end">
+           <SecondaryButton onClick={onClose}>Fechar Historico</SecondaryButton>
         </div>
       </div>
     </div>
@@ -501,39 +580,45 @@ function MobileStock({
   rows: PartStock[];
 }) {
   return (
-    <div className="grid gap-3 lg:hidden">
+    <div className="grid gap-4 sm:grid-cols-2 lg:hidden">
       {rows.map((part) => (
-        <article className="min-w-0 rounded-[8px] border border-white/10 bg-white/[0.03] p-4" key={part.id}>
-          <div className="flex min-w-0 items-start justify-between gap-3">
+        <article
+          className="group relative flex flex-col rounded-[8px] border border-white/10 bg-white/[0.02] p-4 transition hover:bg-white/[0.04]"
+          key={part.id}
+        >
+          <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h3 className="break-words text-sm font-semibold text-white">{part.name}</h3>
-              <p className="mt-1 text-xs text-zinc-500">{part.category} - {part.supplierName ?? "Sem fornecedor"}</p>
+              <h3 className="truncate text-sm font-bold text-white uppercase tracking-tight">
+                {part.name}
+              </h3>
+              <p className="mt-0.5 truncate text-xs text-zinc-500 font-medium">
+                {part.sku} • {part.category}
+              </p>
             </div>
-            <Badge className={stockStatusClass(part)}>{stockStatus(part)}</Badge>
+            <ActionsDropdown
+              onDelete={() => onDelete(part)}
+              onEdit={() => onEdit(part)}
+              onEntry={() => onEntry(part)}
+              onHistory={() => onHistory(part)}
+            />
           </div>
-          <div className="mt-4 grid gap-2 text-xs">
-            <div className="grid grid-cols-2 gap-3">
-              <span className="text-zinc-500">Quantidade</span>
-              <span className="text-right text-zinc-200">{part.quantity}</span>
+
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div className="rounded-[6px] border border-white/5 bg-white/[0.02] p-2.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Qtd Atual</span>
+              <p className="mt-0.5 text-sm font-bold text-white">{part.quantity} un.</p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <span className="text-zinc-500">Valor unit.</span>
-              <span className="text-right text-zinc-200">{currency(part.unitCost)}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <span className="text-zinc-500">Total</span>
-              <span className="text-right font-medium text-white">{currency(part.quantity * part.unitCost)}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <span className="text-zinc-500">Ultima entrada</span>
-              <span className="text-right text-zinc-200">{date(lastEntryDate(part))}</span>
+            <div className="rounded-[6px] border border-white/5 bg-white/[0.02] p-2.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Valor Unit</span>
+              <p className="mt-0.5 text-sm font-bold text-teal-300">{currency(part.unitCost)}</p>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <IconButton icon={Edit3} onClick={() => onEdit(part)}>Editar</IconButton>
-            <IconButton icon={PlusCircle} onClick={() => onEntry(part)} tone="teal">Registrar entrada</IconButton>
-            <IconButton icon={History} onClick={() => onHistory(part)}>Historico</IconButton>
-            <IconButton icon={Trash2} onClick={() => onDelete(part)} tone="danger">Excluir</IconButton>
+
+          <div className="mt-4 flex items-center justify-between gap-2 border-t border-white/5 pt-3">
+            <Badge className={stockRiskClass(part)}>{stockRisk(part)}</Badge>
+            <span className="text-[10px] text-zinc-600 font-medium italic">
+              UP: {date(lastEntryDate(part))}
+            </span>
           </div>
         </article>
       ))}
@@ -768,57 +853,65 @@ export function InventoryManager({
           <div className="min-w-0 animate-in fade-in duration-300">
             {activeTab === "stock" ? (
               <div className="min-w-0">
-                <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                  <PanelTitle icon={Boxes} meta={`${filteredParts.length} itens encontrados`} title="Tabela de estoque" />
-                  <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_170px_180px] xl:w-[800px]">
-                    <label className="relative">
-                      <Search className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-zinc-500" size={16} />
-                      <input
-                        className="h-10 w-full pl-10 pr-3 text-sm"
-                        placeholder="Pesquisar estoque"
-                        value={query}
-                        onChange={(event) => {
-                          setQuery(event.target.value);
-                          resetStockPage();
-                        }}
-                      />
-                    </label>
-                    <label className="relative">
-                      <SlidersHorizontal className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-zinc-500" size={16} />
-                      <select
-                        className="h-10 w-full pl-10 pr-3 text-sm"
-                        value={statusFilter}
-                        onChange={(event) => {
-                          setStatusFilter(event.target.value);
-                          resetStockPage();
-                        }}
-                      >
-                        <option value="all">Todos status</option>
-                        <option value="Estoque normal">Estoque normal</option>
-                        <option value="Estoque baixo">Estoque baixo</option>
-                        <option value="Sem estoque">Sem estoque</option>
-                      </select>
-                    </label>
+                <div className="mb-6 flex flex-col gap-4">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <PanelTitle icon={Boxes} meta={`${filteredParts.length} itens encontrados`} title="Gestaio de Materiais" />
+                    <div className="flex items-center gap-2">
+                      <label className="relative flex-1 sm:min-w-[300px]">
+                        <Search className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-zinc-500" size={16} />
+                        <input
+                          className="h-10 w-full rounded-[8px] border border-white/10 bg-white/[0.03] pl-10 pr-3 text-sm transition focus:border-teal-300/50 focus:bg-white/[0.05]"
+                          placeholder="Buscar por nome, SKU, fabricante..."
+                          value={query}
+                          onChange={(event) => {
+                            setQuery(event.target.value);
+                            resetStockPage();
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <SlidersHorizontal className="text-zinc-500 mr-1" size={16} />
                     <select
-                      className="h-10 w-full px-3 text-sm"
+                      className="h-9 min-w-[140px] rounded-[8px] border border-white/10 bg-white/[0.03] px-3 text-xs font-medium text-zinc-300 transition focus:border-teal-300/50"
+                      value={statusFilter}
+                      onChange={(event) => {
+                        setStatusFilter(event.target.value);
+                        resetStockPage();
+                      }}
+                    >
+                      <option value="all">Situacao (Todos)</option>
+                      <option value="Estoque normal">Normal</option>
+                      <option value="Estoque baixo">Baixo</option>
+                      <option value="Sem estoque">Zerado</option>
+                    </select>
+                    <select
+                      className="h-9 min-w-[160px] rounded-[8px] border border-white/10 bg-white/[0.03] px-3 text-xs font-medium text-zinc-300 transition focus:border-teal-300/50"
                       value={categoryFilter}
                       onChange={(event) => {
                         setCategoryFilter(event.target.value);
                         resetStockPage();
                       }}
                     >
-                      <option value="all">Todas categorias</option>
+                      <option value="all">Categorias (Todas)</option>
                       {categories.map((category) => (
                         <option key={category} value={category}>
                           {category}
                         </option>
                       ))}
                     </select>
+                    <div className="ml-auto flex items-center gap-1.5 rounded-[8px] border border-white/5 bg-white/[0.02] p-1">
+                       <button className="grid h-7 w-7 place-items-center rounded-[6px] text-zinc-500 transition hover:bg-white/5 hover:text-zinc-300" title="Limpar Filtros" onClick={() => { setQuery(""); setStatusFilter("all"); setCategoryFilter("all"); }}>
+                          <X size={14} />
+                       </button>
+                    </div>
                   </div>
                 </div>
 
                 <ErrorMessage error={stockError} />
-                {deleteLoading ? <p className="mb-3 text-sm text-zinc-500">Processando exclusao...</p> : null}
+                {deleteLoading ? <p className="mb-3 text-xs font-medium text-amber-300 animate-pulse text-center">Processando exclusao...</p> : null}
 
                 {paginatedParts.length ? (
                   <>
@@ -830,42 +923,60 @@ export function InventoryManager({
                       rows={paginatedParts}
                     />
                     <div className="table-scroll hidden overflow-x-auto lg:block">
-                      <table className="w-full min-w-[1180px] text-left text-sm">
-                        <thead>
+                      <table className="w-full min-w-[1240px] text-left text-sm">
+                        <thead className="sticky top-0 z-10 bg-[#0d1211]">
                           <tr className="border-b border-white/10">
-                            <th className="py-3 pr-4"><SortButton activeSort={stockSort} column="name" label="Nome da peca" onSort={updateSort} /></th>
-                            <th className="py-3 pr-4"><SortButton activeSort={stockSort} column="category" label="Categoria" onSort={updateSort} /></th>
-                            <th className="py-3 pr-4"><SortButton activeSort={stockSort} column="supplier" label="Fornecedor" onSort={updateSort} /></th>
-                            <th className="py-3 pr-4 text-right"><SortButton activeSort={stockSort} column="quantity" label="Quantidade" onSort={updateSort} /></th>
-                            <th className="py-3 pr-4 text-right"><SortButton activeSort={stockSort} column="unitCost" label="Valor unit." onSort={updateSort} /></th>
-                            <th className="py-3 pr-4 text-right"><SortButton activeSort={stockSort} column="total" label="Valor total" onSort={updateSort} /></th>
-                            <th className="py-3 pr-4"><SortButton activeSort={stockSort} column="status" label="Status" onSort={updateSort} /></th>
-                            <th className="py-3 pr-4"><SortButton activeSort={stockSort} column="lastEntry" label="Ultima entrada" onSort={updateSort} /></th>
-                            <th className="py-3 pr-4 text-xs font-medium uppercase tracking-[0.12em] text-zinc-500">Acoes</th>
+                            <th className="py-4 pr-4"><SortButton activeSort={stockSort} column="name" label="Material / SKU" onSort={updateSort} /></th>
+                            <th className="py-4 pr-4"><SortButton activeSort={stockSort} column="category" label="Classificacao" onSort={updateSort} /></th>
+                            <th className="py-4 pr-4 text-right"><SortButton activeSort={stockSort} column="quantity" label="Qtd Atual" onSort={updateSort} /></th>
+                            <th className="py-4 pr-4 text-right"><SortButton activeSort={stockSort} column="unitCost" label="Valor Unit" onSort={updateSort} /></th>
+                            <th className="py-4 pr-4 text-right"><SortButton activeSort={stockSort} column="total" label="Investimento" onSort={updateSort} /></th>
+                            <th className="py-4 pr-4"><SortButton activeSort={stockSort} column="status" label="Status" onSort={updateSort} /></th>
+                            <th className="py-4 pr-4"><SortButton activeSort={stockSort} column="lastEntry" label="Ult. Movimentacao" onSort={updateSort} /></th>
+                            <th className="py-4 pr-4 text-[10px] font-bold uppercase tracking-widest text-zinc-600 text-center">Acoes</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-white/5">
                           {paginatedParts.map((part) => (
-                            <tr className="border-b border-white/6 transition hover:bg-white/[0.025] last:border-0" key={part.id}>
-                              <td className="py-3 pr-4">
-                                <p className="font-medium text-white">{part.name}</p>
-                                <p className="mt-1 text-xs text-zinc-500">{part.sku} - {part.manufacturer}</p>
+                            <tr className="group transition hover:bg-white/[0.02]" key={part.id}>
+                              <td className="py-4 pr-4">
+                                <p className="font-bold text-white uppercase tracking-tight">{part.name}</p>
+                                <div className="mt-1 flex items-center gap-2">
+                                   <span className="text-[10px] font-bold text-zinc-500 bg-white/5 px-1.5 py-0.5 rounded uppercase">{part.sku}</span>
+                                   <span className="text-[11px] text-zinc-600 font-medium">{part.manufacturer}</span>
+                                </div>
                               </td>
-                              <td className="py-3 pr-4 text-zinc-300">{part.category}</td>
-                              <td className="py-3 pr-4 text-zinc-400">{part.supplierName ?? "-"}</td>
-                              <td className="py-3 pr-4 text-right font-medium text-white">{part.quantity}</td>
-                              <td className="py-3 pr-4 text-right text-zinc-300">{currency(part.unitCost)}</td>
-                              <td className="py-3 pr-4 text-right font-medium text-white">{currency(part.quantity * part.unitCost)}</td>
-                              <td className="py-3 pr-4">
-                                <Badge className={stockStatusClass(part)}>{stockStatus(part)}</Badge>
+                              <td className="py-4 pr-4">
+                                <Badge className="border-white/5 bg-white/5 text-zinc-400">
+                                   {part.category}
+                                </Badge>
+                                <p className="mt-1 text-[11px] text-zinc-600 font-medium truncate max-w-[140px]">{part.supplierName ?? "Sem Fornecedor"}</p>
                               </td>
-                              <td className="py-3 pr-4 text-zinc-400">{date(lastEntryDate(part))}</td>
-                              <td className="py-3 pr-4">
-                                <div className="flex flex-wrap gap-2">
-                                  <IconButton icon={Edit3} onClick={() => startEdit(part)}>Editar</IconButton>
-                                  <IconButton icon={PlusCircle} onClick={() => prepareEntry(part)} tone="teal">Registrar entrada</IconButton>
-                                  <IconButton icon={History} onClick={() => setHistoryPart(part)}>Historico</IconButton>
-                                  <IconButton icon={Trash2} onClick={() => deletePartRow(part)} tone="danger">Excluir</IconButton>
+                              <td className="py-4 pr-4 text-right">
+                                <span className="font-bold text-white text-base">{part.quantity}</span>
+                                <span className="ml-1 text-[10px] font-bold text-zinc-500 uppercase">UN</span>
+                              </td>
+                              <td className="py-4 pr-4 text-right text-zinc-400 font-medium">{currency(part.unitCost)}</td>
+                              <td className="py-4 pr-4 text-right">
+                                 <p className="font-bold text-teal-300">{currency(part.quantity * part.unitCost)}</p>
+                              </td>
+                              <td className="py-4 pr-4">
+                                <Badge className={stockRiskClass(part)}>{stockRisk(part)}</Badge>
+                              </td>
+                              <td className="py-4 pr-4">
+                                <div className="text-zinc-500 font-medium">
+                                   <p>{date(lastEntryDate(part))}</p>
+                                   <p className="text-[10px] text-zinc-700 uppercase">Brasilia, DF</p>
+                                </div>
+                              </td>
+                              <td className="py-4 pr-4">
+                                <div className="flex justify-center">
+                                  <ActionsDropdown
+                                    onDelete={() => deletePartRow(part)}
+                                    onEdit={() => startEdit(part)}
+                                    onEntry={() => prepareEntry(part)}
+                                    onHistory={() => setHistoryPart(part)}
+                                  />
                                 </div>
                               </td>
                             </tr>
@@ -875,31 +986,36 @@ export function InventoryManager({
                     </div>
                   </>
                 ) : (
-                  <EmptyState>Nenhum item de estoque encontrado.</EmptyState>
+                  <EmptyState>Nenhum item de estoque encontrado com os filtros aplicados.</EmptyState>
                 )}
 
-                <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm text-zinc-500">
-                    Pagina {currentStockPage} de {totalStockPages}
+                <div className="mt-6 flex flex-col gap-4 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-[13px] font-medium text-zinc-500">
+                    Exibindo <span className="text-zinc-300">{paginatedParts.length}</span> de <span className="text-zinc-300">{filteredParts.length}</span> materiais
                   </p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <button
-                      className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-white/10 px-3 text-sm text-zinc-200 transition hover:bg-white/7 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-white/10 px-4 text-xs font-bold uppercase tracking-wider text-zinc-400 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-30"
                       disabled={currentStockPage <= 1}
                       onClick={() => setStockPage((page) => Math.max(1, page - 1))}
                       type="button"
                     >
-                      <ChevronLeft size={16} />
+                      <ChevronLeft size={14} />
                       Anterior
                     </button>
+                    <div className="flex h-9 items-center gap-1 px-3">
+                       <span className="text-xs font-bold text-teal-300">{currentStockPage}</span>
+                       <span className="text-xs font-medium text-zinc-600">/</span>
+                       <span className="text-xs font-bold text-zinc-500">{totalStockPages}</span>
+                    </div>
                     <button
-                      className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-white/10 px-3 text-sm text-zinc-200 transition hover:bg-white/7 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-white/10 px-4 text-xs font-bold uppercase tracking-wider text-zinc-400 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-30"
                       disabled={currentStockPage >= totalStockPages}
                       onClick={() => setStockPage((page) => Math.min(totalStockPages, page + 1))}
                       type="button"
                     >
                       Proxima
-                      <ChevronRight size={16} />
+                      <ChevronRight size={14} />
                     </button>
                   </div>
                 </div>

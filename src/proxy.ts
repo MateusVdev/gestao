@@ -11,7 +11,7 @@ function getSecret() {
   return new TextEncoder().encode(raw);
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const { pathname } = request.nextUrl;
   const isLoginPage = pathname === "/login";

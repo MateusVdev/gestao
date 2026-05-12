@@ -161,6 +161,7 @@ export type MotorcycleFine = {
   motorcycleId: string;
   motorcycleName: string;
   motorcyclePlate: string;
+  driver: string;
   tripId?: string | null;
   value: number;
   paidAmount: number;

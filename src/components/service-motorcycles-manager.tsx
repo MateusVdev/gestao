@@ -26,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { Section } from "@/components/page";
-import { cn, currency, motorcycleStatusClass, motorcycleStatusLabel } from "@/lib/format";
+import { cn, currency, date, motorcycleStatusClass, motorcycleStatusLabel } from "@/lib/format";
 import type {
   FinancialEntry,
   MotorcycleFine,
@@ -36,7 +36,7 @@ import type {
 } from "@/lib/types";
 
 type HttpMethod = "POST" | "PUT";
-type MotorcycleTab = "list" | "new" | "trip";
+type MotorcycleTab = "list" | "new" | "trip" | "fines";
 type SortDirection = "asc" | "desc";
 type MotorcycleSortKey =
   | "model"
@@ -55,6 +55,7 @@ const motorcycleTabs: Array<{ id: MotorcycleTab; label: string; icon: React.Elem
   { id: "list", label: "Motos cadastradas", icon: Bike },
   { id: "new", label: "Nova moto", icon: PlusCircle },
   { id: "trip", label: "Saida e retorno", icon: MapPin },
+  { id: "fines", label: "Controle de multas", icon: ShieldAlert },
 ];
 
 function inputClass() {
@@ -613,8 +614,9 @@ function FineDetailsModal({
   onClose: () => void;
   onSaved: (fine: MotorcycleFine) => void;
 }) {
+  const isPaid = fine.paymentStatus === "PAID";
   const [form, setForm] = useState(() => ({
-    paidAmount: fine.paidAmount,
+    paidAmount: isPaid ? fine.paidAmount : fine.value,
     paidBy: fine.paidBy ?? "",
     authorizedBy: fine.authorizedBy ?? "",
     paidAt: fine.paidAt ?? new Date().toISOString().slice(0, 10),
@@ -622,17 +624,21 @@ function FineDetailsModal({
   }));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const nextStatus = fineStatusLabel(
-    form.paidAmount >= fine.value ? "PAID" : form.paidAmount > 0 ? "PARTIAL" : "PENDING",
-  );
+  const [showConfirm, setShowConfirm] = useState(false);
+
   const remaining = Math.max(0, fine.value - form.paidAmount);
+  const nextStatus = form.paidAmount >= fine.value ? "PAID" : form.paidAmount > 0 ? "PARTIAL" : "PENDING";
 
   async function save() {
     if (form.paidAmount > fine.value) {
       setError("O valor pago nao pode ultrapassar o valor total da multa.");
       return;
     }
-    if (form.paidAmount > 0 && (!form.paidBy.trim() || !form.authorizedBy.trim())) {
+    if (form.paidAmount <= 0) {
+      setError("Informe um valor de pagamento valido.");
+      return;
+    }
+    if (!form.paidBy.trim() || !form.authorizedBy.trim()) {
       setError("Informe quem pagou e quem autorizou o pagamento.");
       return;
     }
@@ -640,28 +646,36 @@ function FineDetailsModal({
     setLoading(true);
     setError("");
 
-    const response = await fetch(`/api/service-motorcycles/fines/${fine.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    const body = await response.json().catch(() => null);
+    try {
+      const response = await fetch(`/api/service-motorcycles/fines/${fine.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const body = await response.json().catch(() => null);
 
-    if (!response.ok) {
-      setError(body?.message ?? "Nao foi possivel atualizar a multa.");
+      if (!response.ok) {
+        throw new Error(body?.message ?? "Nao foi possivel atualizar a multa.");
+      }
+
+      onSaved(body as MotorcycleFine);
+      setShowConfirm(false);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    onSaved(body as MotorcycleFine);
-    setLoading(false);
   }
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="app-surface max-h-[88vh] w-full max-w-5xl overflow-hidden rounded-[8px]">
+      <div className="app-surface max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-[8px] shadow-2xl">
         <div className="flex items-center justify-between gap-4 border-b border-white/10 p-4">
-          <PanelTitle icon={ShieldAlert} meta={`${fine.motorcyclePlate} - ${fine.reason}`} title="Detalhes da multa" />
+          <PanelTitle
+            icon={ShieldAlert}
+            meta={`${fine.motorcyclePlate} • ${fine.motorcycleName}`}
+            title="Detalhamento da Multa"
+          />
           <button
             className="grid h-9 w-9 place-items-center rounded-[8px] border border-white/10 text-zinc-300 transition hover:bg-white/7"
             onClick={onClose}
@@ -671,107 +685,277 @@ function FineDetailsModal({
           </button>
         </div>
 
-        <div className="grid max-h-[75vh] gap-4 overflow-auto p-4 lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <StatCard icon={ShieldAlert} label="Valor total" value={currency(fine.value)} />
-              <StatCard icon={CreditCard} label="Valor pago" value={currency(form.paidAmount)} />
-              <StatCard icon={Gauge} label="Saldo" value={currency(remaining)} />
-              <div className="app-surface rounded-[8px] p-4">
-                <p className="text-sm text-zinc-400">Status</p>
-                <div className="mt-3">
-                  <Badge className={fineStatusClass(form.paidAmount >= fine.value ? "PAID" : form.paidAmount > 0 ? "PARTIAL" : "PENDING")}>
-                    {nextStatus}
+        <div className="grid max-h-[78vh] gap-4 overflow-auto p-5 lg:grid-cols-[400px_minmax(0,1fr)]">
+          <div className="space-y-4">
+            <div className="rounded-[8px] border border-white/10 bg-white/[0.02] p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Dados da Infracao</p>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <span className="text-xs text-zinc-400">Motorista Responsavel</span>
+                  <p className="font-semibold text-white">{fine.driver}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-zinc-400">Motivo</span>
+                  <p className="text-sm text-zinc-200">{fine.reason}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-xs text-zinc-400">Data</span>
+                    <p className="text-sm text-zinc-200">{date(fine.date)}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-zinc-400">Valor Original</span>
+                    <p className="text-sm font-bold text-rose-300">{currency(fine.value)}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <StatCard icon={CreditCard} label="Valor Pago" value={currency(fine.paidAmount)} />
+              <StatCard
+                icon={Gauge}
+                label="Saldo Devedor"
+                value={<span className={fine.paidAmount < fine.value ? "text-rose-400" : "text-emerald-400"}>{currency(fine.value - fine.paidAmount)}</span>}
+              />
+              <div className="app-surface rounded-[8px] border border-white/5 p-4">
+                <p className="text-xs font-medium text-zinc-400">Situacao Final</p>
+                <div className="mt-2">
+                  <Badge className={fineStatusClass(fine.paymentStatus)}>
+                    {fineStatusLabel(fine.paymentStatus)}
                   </Badge>
                 </div>
               </div>
             </div>
 
             <div className="rounded-[8px] border border-white/10 bg-white/[0.03] p-4">
-              <h3 className="text-sm font-semibold text-white">Timeline</h3>
-              <div className="mt-4 space-y-3 border-l border-white/10 pl-4">
-                <div>
-                  <p className="text-sm text-white">Multa registrada</p>
-                  <p className="mt-1 text-xs text-zinc-500">{formatDateTime(fine.date)} - {fine.reason}</p>
-                </div>
+              <h3 className="text-sm font-semibold text-white">Timeline de Pagamentos</h3>
+              <div className="mt-4 space-y-4 border-l-2 border-teal-500/20 pl-4">
                 {fine.paymentHistory.length ? (
                   fine.paymentHistory.map((event) => (
-                    <div key={event.id}>
-                      <p className="text-sm text-white">{fineStatusLabel(event.paymentStatus)}</p>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        {currency(event.paidAmount)} por {event.paidBy || "-"} autorizado por {event.authorizedBy || "-"}
+                    <div className="relative" key={event.id}>
+                      <div className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.5)]" />
+                      <p className="text-xs font-bold text-white uppercase">{fineStatusLabel(event.paymentStatus)}</p>
+                      <p className="mt-0.5 text-sm text-zinc-300">
+                        {currency(event.paidAmount)} por <span className="text-zinc-100">{event.paidBy}</span>
                       </p>
-                      <p className="mt-1 text-[11px] text-zinc-600">{formatDateTime(event.createdAt)} - {event.changedBy}</p>
+                      <p className="mt-1 text-[11px] text-zinc-500">
+                        {formatDateTime(event.createdAt)} • Aut: {event.authorizedBy}
+                      </p>
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-zinc-500">Nenhum pagamento registrado.</p>
+                  <p className="text-xs text-zinc-500 italic">Nenhum pagamento registrado ate o momento.</p>
                 )}
               </div>
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Valor pago">
-                <input
-                  className={inputClass()}
-                  max={fine.value}
-                  min={0}
-                  step="0.01"
-                  type="number"
-                  value={form.paidAmount}
-                  onChange={(event) => {
-                    const raw = Number(event.target.value);
-                    if (raw > fine.value) {
-                      setError("O valor pago nao pode ultrapassar o valor total da multa.");
-                    } else {
-                      setError("");
-                    }
-                    setForm((current) => ({ ...current, paidAmount: Math.min(fine.value, Math.max(0, raw)) }));
-                  }}
-                />
-              </Field>
-              <Field label="Data do pagamento">
-                <input
-                  className={inputClass()}
-                  type="date"
-                  value={form.paidAt}
-                  onChange={(event) => setForm((current) => ({ ...current, paidAt: event.target.value }))}
-                />
-              </Field>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Quem pagou">
-                <input className={inputClass()} value={form.paidBy} onChange={(event) => setForm((current) => ({ ...current, paidBy: event.target.value }))} />
-              </Field>
-              <Field label="Quem autorizou">
-                <input className={inputClass()} value={form.authorizedBy} onChange={(event) => setForm((current) => ({ ...current, authorizedBy: event.target.value }))} />
-              </Field>
-            </div>
-            <Field label="Observacoes">
-              <textarea className={textareaClass()} value={form.paymentNotes} onChange={(event) => setForm((current) => ({ ...current, paymentNotes: event.target.value }))} />
-            </Field>
-            <div className="rounded-[8px] border border-white/10 bg-white/[0.03] p-3 text-sm text-zinc-400">
-              <p>Valor maximo permitido: <strong className="text-white">{currency(fine.value)}</strong></p>
-              <p className="mt-1">Status sera atualizado automaticamente conforme o valor pago.</p>
-            </div>
-            <ErrorMessage error={error} />
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <button
-                className="flex h-10 items-center justify-center gap-2 rounded-[8px] bg-teal-300 px-4 text-sm font-semibold text-zinc-950 transition hover:bg-teal-200 disabled:cursor-wait disabled:opacity-60"
-                disabled={loading}
-                onClick={save}
-                type="button"
-              >
-                <Save size={16} />
-                {loading ? "Salvando..." : "Salvar pagamento"}
-              </button>
-              <SecondaryButton onClick={onClose}>Fechar</SecondaryButton>
-            </div>
+          <div className="space-y-4">
+            {isPaid ? (
+              <div className="flex min-h-[300px] flex-col items-center justify-center rounded-[8px] border border-emerald-500/20 bg-emerald-500/5 p-8 text-center">
+                <div className="grid h-16 w-16 place-items-center rounded-full bg-emerald-500/10 text-emerald-400">
+                  <CheckCircle2 size={32} />
+                </div>
+                <h3 className="mt-4 text-xl font-bold text-white">Multa Totalmente Paga</h3>
+                <p className="mt-2 max-w-xs text-sm text-zinc-400">
+                  Este registro foi finalizado e nao permite novas alteracoes financeiras.
+                </p>
+                <div className="mt-8 w-full max-w-sm rounded-[8px] border border-white/10 bg-white/5 p-4 text-left">
+                   <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Ultimas Observacoes</p>
+                   <p className="mt-2 text-sm text-zinc-300 leading-relaxed">
+                     {fine.paymentNotes || "Nenhuma observacao registrada no pagamento final."}
+                   </p>
+                </div>
+                <button className="mt-8 text-sm font-medium text-zinc-500 hover:text-white transition" onClick={onClose}>
+                  Fechar Detalhes
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-[8px] border border-white/10 p-5 space-y-5">
+                <PanelTitle icon={CreditCard} title="Registrar Pagamento" />
+                
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Valor a ser Pago">
+                    <input
+                      className={inputClass()}
+                      max={fine.value}
+                      min={0}
+                      step="0.01"
+                      type="number"
+                      value={form.paidAmount}
+                      onChange={(event) => setForm((current) => ({ ...current, paidAmount: Math.min(fine.value, Number(event.target.value)) }))}
+                    />
+                  </Field>
+                  <Field label="Data do Pagamento">
+                    <input
+                      className={inputClass()}
+                      type="date"
+                      value={form.paidAt}
+                      onChange={(event) => setForm((current) => ({ ...current, paidAt: event.target.value }))}
+                    />
+                  </Field>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Responsavel pelo Pagamento">
+                    <input className={inputClass()} placeholder="Nome do motorista ou adm" value={form.paidBy} onChange={(event) => setForm((current) => ({ ...current, paidBy: event.target.value }))} />
+                  </Field>
+                  <Field label="Autorizado por">
+                    <input className={inputClass()} placeholder="Nome do gestor" value={form.authorizedBy} onChange={(event) => setForm((current) => ({ ...current, authorizedBy: event.target.value }))} />
+                  </Field>
+                </div>
+
+                <Field label="Observacoes do Pagamento">
+                  <textarea className={textareaClass()} placeholder="Detalhes adicionais..." value={form.paymentNotes} onChange={(event) => setForm((current) => ({ ...current, paymentNotes: event.target.value }))} />
+                </Field>
+
+                <div className="rounded-[8px] border border-amber-400/20 bg-amber-400/5 p-4">
+                  <div className="flex gap-3 text-sm text-amber-200">
+                    <ShieldAlert className="shrink-0" size={18} />
+                    <div>
+                      <p className="font-semibold">Regra de Pagamento</p>
+                      <p className="mt-1 text-zinc-400 leading-relaxed">
+                        Ao pagar o valor total de <strong className="text-white">{currency(fine.value)}</strong>, o status sera alterado para <strong className="text-emerald-300">Paga</strong> e o registro sera movido para o historico definitivo.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <ErrorMessage error={error} />
+
+                <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+                  <button
+                    className="flex h-11 flex-1 items-center justify-center gap-2 rounded-[8px] bg-teal-300 px-6 text-sm font-bold text-zinc-950 transition hover:bg-teal-200 disabled:opacity-50"
+                    disabled={loading}
+                    onClick={() => setShowConfirm(true)}
+                    type="button"
+                  >
+                    <CheckCircle2 size={18} />
+                    Pagar Multa
+                  </button>
+                  <SecondaryButton onClick={onClose}>Cancelar</SecondaryButton>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {showConfirm && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/80 backdrop-blur-md p-4">
+          <div className="app-surface w-full max-w-md rounded-[8px] border border-white/10 p-6 text-center shadow-2xl">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-amber-400/10 text-amber-400">
+              <ShieldAlert size={28} />
+            </div>
+            <h3 className="mt-4 text-lg font-bold text-white">Confirmar Pagamento?</h3>
+            <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
+              Deseja realmente finalizar o pagamento desta multa no valor de <strong className="text-white">{currency(form.paidAmount)}</strong>? Esta acao podera ser definitiva.
+            </p>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+              <button
+                className="flex h-11 flex-1 items-center justify-center rounded-[8px] bg-teal-300 text-sm font-bold text-zinc-950 transition hover:bg-teal-200"
+                onClick={save}
+              >
+                Confirmar e Pagar
+              </button>
+              <button
+                className="h-11 flex-1 rounded-[8px] border border-white/10 text-sm font-medium text-white transition hover:bg-white/5"
+                onClick={() => setShowConfirm(false)}
+              >
+                Voltar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function FinesTable({
+  fines,
+  onView,
+}: {
+  fines: MotorcycleFine[];
+  onView: (fine: MotorcycleFine) => void;
+}) {
+  return (
+    <div className="table-scroll overflow-x-auto">
+      <table className="w-full min-w-[1000px] text-left text-sm">
+        <thead>
+          <tr className="border-b border-white/10 text-xs uppercase tracking-[0.12em] text-zinc-500">
+            <th className="py-3 pr-4 font-medium">Moto / Placa</th>
+            <th className="py-3 pr-4 font-medium">Motorista</th>
+            <th className="py-3 pr-4 font-medium">Motivo / Data</th>
+            <th className="py-3 pr-4 font-medium">Valor Total</th>
+            <th className="py-3 pr-4 font-medium">Status</th>
+            <th className="py-3 pr-4 font-medium">Acoes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {fines.map((fine) => (
+            <tr className="border-b border-white/6 transition hover:bg-white/[0.025] last:border-0" key={fine.id}>
+              <td className="py-3 pr-4">
+                <p className="font-medium text-white">{fine.motorcyclePlate}</p>
+                <p className="mt-0.5 text-xs text-zinc-500">{fine.motorcycleName}</p>
+              </td>
+              <td className="py-3 pr-4 text-zinc-300">{fine.driver}</td>
+              <td className="py-3 pr-4">
+                <p className="text-zinc-200">{fine.reason}</p>
+                <p className="mt-0.5 text-xs text-zinc-500">{date(fine.date)}</p>
+              </td>
+              <td className="py-3 pr-4 font-bold text-white">{currency(fine.value)}</td>
+              <td className="py-3 pr-4">
+                <Badge className={fineStatusClass(fine.paymentStatus)}>{fineStatusLabel(fine.paymentStatus)}</Badge>
+              </td>
+              <td className="py-3 pr-4">
+                <IconButton icon={fine.paymentStatus === "PAID" ? Eye : CreditCard} onClick={() => onView(fine)} tone={fine.paymentStatus === "PAID" ? "neutral" : "teal"}>
+                  {fine.paymentStatus === "PAID" ? "Visualizar" : "Pagar"}
+                </IconButton>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MobileFines({
+  fines,
+  onView,
+}: {
+  fines: MotorcycleFine[];
+  onView: (fine: MotorcycleFine) => void;
+}) {
+  return (
+    <div className="grid gap-3">
+      {fines.map((fine) => (
+        <article className="rounded-[8px] border border-white/10 bg-white/[0.03] p-4" key={fine.id}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-white">{fine.motorcyclePlate} • {fine.driver}</h3>
+              <p className="mt-1 text-xs text-zinc-500">{fine.reason}</p>
+            </div>
+            <Badge className={fineStatusClass(fine.paymentStatus)}>{fineStatusLabel(fine.paymentStatus)}</Badge>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <span className="text-zinc-500">Valor</span>
+              <p className="mt-1 font-bold text-white">{currency(fine.value)}</p>
+            </div>
+            <div>
+              <span className="text-zinc-500">Data</span>
+              <p className="mt-1 text-zinc-300">{date(fine.date)}</p>
+            </div>
+          </div>
+          <div className="mt-4 pt-3 border-t border-white/5">
+            <IconButton icon={fine.paymentStatus === "PAID" ? Eye : CreditCard} onClick={() => onView(fine)} tone={fine.paymentStatus === "PAID" ? "neutral" : "teal"}>
+              {fine.paymentStatus === "PAID" ? "Ver Detalhes" : "Pagar Agora"}
+            </IconButton>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
@@ -910,6 +1094,10 @@ export function ServiceMotorcyclesManager({
     () => motorcycleRows.find((motorcycle) => motorcycle.id === tripForm.motorcycleId),
     [motorcycleRows, tripForm.motorcycleId],
   );
+
+  const pendingFines = useMemo(() => fineRows.filter((f) => f.paymentStatus !== "PAID"), [fineRows]);
+  const paidFines = useMemo(() => fineRows.filter((f) => f.paymentStatus === "PAID"), [fineRows]);
+
   const averageHours = useMemo(() => averageServiceHours(tripRows), [tripRows]);
   const totalFineValue = useMemo(
     () => fineRows.reduce((total, fine) => total + fine.value, 0),
@@ -1019,6 +1207,29 @@ export function ServiceMotorcyclesManager({
 
   return (
     <>
+      {pendingFines.length > 0 && (
+        <div className="mb-4 animate-in slide-in-from-top duration-500">
+          <div className="flex flex-col gap-3 rounded-[8px] border border-rose-400/20 bg-rose-400/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-full bg-rose-400/10 text-rose-400">
+                <ShieldAlert size={20} />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white">Alerta: Multas Pendentes</h4>
+                <p className="text-xs text-rose-200/70">Existem {pendingFines.length} multa(s) aguardando pagamento no sistema.</p>
+              </div>
+            </div>
+            <button
+              className="h-9 rounded-[8px] bg-rose-400/10 px-4 text-xs font-bold text-rose-100 transition hover:bg-rose-400/20"
+              onClick={() => changeTab("fines")}
+              type="button"
+            >
+              Resolver Agora
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard icon={Bike} label="Motos cadastradas" value={motorcycleRows.length} />
         <StatCard icon={CalendarClock} label="Saidas registradas" value={tripRows.length} />
@@ -1050,6 +1261,54 @@ export function ServiceMotorcyclesManager({
           <InternalNav activeTab={activeTab} onChange={changeTab} />
 
           <div className="min-w-0 animate-in fade-in duration-300">
+            {activeTab === "fines" ? (
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <PanelTitle
+                      icon={ShieldAlert}
+                      meta={`${pendingFines.length} multas aguardando resolucao`}
+                      title="Multas Pendentes"
+                    />
+                  </div>
+                  {pendingFines.length ? (
+                    <>
+                      <div className="hidden lg:block">
+                        <FinesTable fines={pendingFines} onView={setSelectedFine} />
+                      </div>
+                      <div className="lg:hidden">
+                        <MobileFines fines={pendingFines} onView={setSelectedFine} />
+                      </div>
+                    </>
+                  ) : (
+                    <EmptyState>Nao ha multas pendentes no momento. Bom trabalho!</EmptyState>
+                  )}
+                </div>
+
+                <div className="space-y-4 pt-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <PanelTitle
+                      icon={CheckCircle2}
+                      meta={`${paidFines.length} registros liquidados`}
+                      title="Historico de Multas Pagas"
+                    />
+                  </div>
+                  {paidFines.length ? (
+                    <>
+                      <div className="hidden lg:block opacity-75">
+                        <FinesTable fines={paidFines} onView={setSelectedFine} />
+                      </div>
+                      <div className="lg:hidden opacity-75">
+                        <MobileFines fines={paidFines} onView={setSelectedFine} />
+                      </div>
+                    </>
+                  ) : (
+                    <EmptyState>O historico de multas pagas esta vazio.</EmptyState>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
             {activeTab === "list" ? (
               <div className="min-w-0">
                 <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">

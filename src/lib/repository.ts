@@ -372,7 +372,8 @@ function normalizePaymentHistory(value: unknown): FinePaymentHistory[] {
 function toMotorcycleFine(fine: {
   id: string;
   serviceMotorcycleId: string;
-  serviceMotorcycle: { brand: string; model: string; plate: string };
+  serviceMotorcycle: { brand: string; model: string; plate: string; driver: string };
+  trip?: { driver: string } | null;
   tripId?: string | null;
   value: unknown;
   paidAmount?: unknown;
@@ -395,6 +396,7 @@ function toMotorcycleFine(fine: {
     motorcycleId: fine.serviceMotorcycleId,
     motorcycleName: `${fine.serviceMotorcycle.brand} ${fine.serviceMotorcycle.model}`,
     motorcyclePlate: fine.serviceMotorcycle.plate,
+    driver: fine.trip?.driver ?? fine.serviceMotorcycle.driver,
     tripId: fine.tripId,
     value,
     paidAmount,
@@ -873,7 +875,7 @@ export async function getMotorcycleFines(): Promise<MotorcycleFine[]> {
   return withDb(
     async () => {
       const items = await prisma.motorcycleFine.findMany({
-        include: { serviceMotorcycle: true },
+        include: { serviceMotorcycle: true, trip: true },
         orderBy: { date: "desc" },
       });
       return items.map(toMotorcycleFine);
@@ -3003,14 +3005,26 @@ export async function createMotorcycleTrip(input: MotorcycleTripInput) {
               notes: input.fineNotes,
             },
           });
+
           await transaction.financialEntry.create({
             data: {
               kind: "EXPENSE",
               category: "Multas",
-              description: `Multa - ${motorcycle.brand} ${motorcycle.model}`,
+              description: `Multa - ${motorcycle.brand} ${motorcycle.model} (${trip.driver})`,
               value: fineValue,
               date: new Date(input.fineDate ?? input.departureAt),
               serviceMotorcycleId: input.motorcycleId,
+            },
+          });
+
+          await transaction.activityLog.create({
+            data: {
+              userName: trip.driver,
+              action: "CREATE",
+              entity: "Multa",
+              description: `Multa de ${currency(fineValue)} registrada para o motorista ${trip.driver}.`,
+              module: "Motos de Servico",
+              createdAt: new Date(),
             },
           });
         }
@@ -3112,14 +3126,19 @@ export async function updateMotorcycleFinePayment(
     async () => {
       const current = await prisma.motorcycleFine.findUniqueOrThrow({
         where: { id },
-        include: { serviceMotorcycle: true },
+        include: { serviceMotorcycle: true, trip: true },
       });
-      const value = Number(current.value);
-      if (paidAmount > value) {
-        throw new Error("O valor pago nao pode ultrapassar o valor total da multa.");
+
+      if (current.paymentStatus === "PAID") {
+        throw new Error("Esta multa ja foi paga e nao pode ser alterada.");
       }
 
-      const status = finePaymentStatus(value, paidAmount);
+      const totalValue = Number(current.value);
+      if (paidAmount > totalValue) {
+        throw new Error(`O valor pago (${currency(paidAmount)}) nao pode ultrapassar o valor total da multa (${currency(totalValue)}).`);
+      }
+
+      const status = paidAmount === totalValue ? "PAID" : paidAmount > 0 ? "PARTIAL" : "PENDING";
       const history = normalizePaymentHistory(current.paymentHistory);
       const event: FinePaymentHistory = {
         id: randomUUID(),
@@ -3144,7 +3163,16 @@ export async function updateMotorcycleFinePayment(
           paymentNotes: input.paymentNotes || null,
           paymentHistory: [...history, event] as Prisma.InputJsonValue,
         },
-        include: { serviceMotorcycle: true },
+        include: { serviceMotorcycle: true, trip: true },
+      });
+
+      await recordActivity({
+        userName: changedBy,
+        action: "UPDATE",
+        module: "Motos de Servico",
+        entityId: id,
+        description: `Pagamento de multa registrado: ${currency(paidAmount)} (Status: ${status}).`,
+        newValue: saved,
       });
 
       return toMotorcycleFine(saved);
@@ -3154,11 +3182,14 @@ export async function updateMotorcycleFinePayment(
       if (!fine) {
         throw new Error("Multa nao encontrada.");
       }
+      if (fine.paymentStatus === "PAID") {
+        throw new Error("Esta multa ja foi paga e nao pode ser alterada.");
+      }
       if (paidAmount > fine.value) {
-        throw new Error("O valor pago nao pode ultrapassar o valor total da multa.");
+        throw new Error(`O valor pago (${currency(paidAmount)}) nao pode ultrapassar o valor total da multa (${currency(fine.value)}).`);
       }
 
-      const status = finePaymentStatus(fine.value, paidAmount);
+      const status = paidAmount === fine.value ? "PAID" : paidAmount > 0 ? "PARTIAL" : "PENDING";
       const event: FinePaymentHistory = {
         id: randomUUID(),
         paidAmount,

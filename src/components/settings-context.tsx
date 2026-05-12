@@ -55,10 +55,17 @@ export function SettingsProvider({
   initialSettings: CompanySettings;
 }) {
   const [settings, setSettings] = useState(() => safeSettings(initialSettings));
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    applyClientSettings(settings);
-  }, [settings]);
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (mounted) {
+      applyClientSettings(settings);
+    }
+  }, [settings, mounted]);
 
   useEffect(() => {
     function onUpdated(event: Event) {
@@ -68,11 +75,17 @@ export function SettingsProvider({
       }
     }
 
-    window.addEventListener("coopfleet:settings-updated", onUpdated);
+    if (mounted) {
+      window.addEventListener("coopfleet:settings-updated", onUpdated);
+    }
     return () => window.removeEventListener("coopfleet:settings-updated", onUpdated);
-  }, []);
+  }, [mounted]);
 
   const value = useMemo(() => settings, [settings]);
+
+  if (!mounted) {
+    return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
+  }
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }

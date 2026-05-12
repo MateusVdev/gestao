@@ -20,8 +20,8 @@ export default async function RootLayout({
   const settings = (await getDataset()).companySettings;
 
   return (
-    <html data-currency={settings.currency} data-theme={settings.theme} lang="pt-BR">
-      <body>{children}</body>
+    <html data-currency={settings.currency} data-theme={settings.theme} lang="pt-BR" suppressHydrationWarning>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }
