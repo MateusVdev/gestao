@@ -150,6 +150,26 @@ export function motorcycleStatusClass(status: string) {
   return classes[status] ?? classes.UNAVAILABLE;
 }
 
+export function maintenanceStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    ONGOING: "Em andamento",
+    WAITING_PARTS: "Aguardando peça",
+    CONCLUDED: "Concluída",
+    CANCELED: "Cancelada",
+  };
+  return labels[status] ?? status;
+}
+
+export function maintenanceStatusClass(status: string) {
+  const classes: Record<string, string> = {
+    ONGOING: "border-sky-400/30 bg-sky-400/10 text-sky-200",
+    WAITING_PARTS: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+    CONCLUDED: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
+    CANCELED: "border-rose-400/30 bg-rose-400/10 text-rose-200",
+  };
+  return classes[status] ?? classes.ONGOING;
+}
+
 export function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }

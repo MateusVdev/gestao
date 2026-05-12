@@ -1,9 +1,19 @@
 import { ServiceMotorcyclesManager } from "@/components/service-motorcycles-manager";
 import { PageHeader } from "@/components/page";
-import { getDataset } from "@/lib/repository";
+import {
+  getFinanceEntries,
+  getMotorcycleFines,
+  getMotorcycleTrips,
+  getServiceMotorcycles,
+} from "@/lib/repository";
 
 export default async function ServiceMotorcyclesPage() {
-  const dataset = await getDataset();
+  const [finances, fines, motorcycles, trips] = await Promise.all([
+    getFinanceEntries(),
+    getMotorcycleFines(),
+    getServiceMotorcycles(),
+    getMotorcycleTrips(),
+  ]);
 
   return (
     <>
@@ -12,10 +22,10 @@ export default async function ServiceMotorcyclesPage() {
         title="Motos de Servico"
       />
       <ServiceMotorcyclesManager
-        entries={dataset.financialEntries}
-        fines={dataset.motorcycleFines}
-        motorcycles={dataset.serviceMotorcycles}
-        trips={dataset.motorcycleTrips}
+        entries={finances}
+        fines={fines}
+        motorcycles={motorcycles}
+        trips={trips}
       />
     </>
   );

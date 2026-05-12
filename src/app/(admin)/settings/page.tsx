@@ -1,10 +1,13 @@
 import { PageHeader } from "@/components/page";
 import { SettingsManager } from "@/components/settings-manager";
 import { isDatabaseConfigured } from "@/lib/prisma";
-import { getDataset } from "@/lib/repository";
+import { getBackupRecords, getSettings } from "@/lib/repository";
 
 export default async function SettingsPage() {
-  const dataset = await getDataset();
+  const [settings, backupRecords] = await Promise.all([
+    getSettings(),
+    getBackupRecords(),
+  ]);
 
   return (
     <>
@@ -13,9 +16,9 @@ export default async function SettingsPage() {
         title="Configuracoes profissionais"
       />
       <SettingsManager
-        backupRecords={dataset.backupRecords}
+        backupRecords={backupRecords}
         databaseConfigured={isDatabaseConfigured()}
-        initialSettings={dataset.companySettings}
+        initialSettings={settings}
       />
     </>
   );

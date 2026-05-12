@@ -44,6 +44,13 @@ enum ServiceMotorcycleStatus {
   UNAVAILABLE
 }
 
+enum MaintenanceStatus {
+  ONGOING
+  WAITING_PARTS
+  CONCLUDED
+  CANCELED
+}
+
 enum MotorcycleFineStatus {
   PENDING
   PARTIAL
@@ -90,6 +97,9 @@ model Maintenance {
   mechanic       String
   notes          String?
   totalValue     Decimal           @db.Decimal(12, 2)
+  status         MaintenanceStatus @default(ONGOING)
+  concludedAt    DateTime?
+  concludedBy    String?
   createdAt      DateTime          @default(now())
   parts          MaintenancePart[]
   stockMovements StockMovement[]

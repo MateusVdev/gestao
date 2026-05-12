@@ -1,9 +1,13 @@
 import { PageHeader } from "@/components/page";
 import { MaintenanceManager } from "@/components/managers";
-import { getDataset } from "@/lib/repository";
+import { getInventory, getMaintenances, getVehicles } from "@/lib/repository";
 
 export default async function MaintenancePage() {
-  const dataset = await getDataset();
+  const [maintenances, inventory, vehicles] = await Promise.all([
+    getMaintenances(),
+    getInventory(),
+    getVehicles(),
+  ]);
 
   return (
     <>
@@ -12,9 +16,9 @@ export default async function MaintenancePage() {
         title="Controle de manutenção"
       />
       <MaintenanceManager
-        maintenances={dataset.maintenances}
-        partStock={dataset.partStock}
-        vehicles={dataset.vehicles}
+        maintenances={maintenances}
+        partStock={inventory.partStock}
+        vehicles={vehicles}
       />
     </>
   );

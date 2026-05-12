@@ -1,9 +1,12 @@
 import { InventoryManager } from "@/components/inventory-manager";
 import { PageHeader } from "@/components/page";
-import { getDataset } from "@/lib/repository";
+import { getInventory, getStockMovements } from "@/lib/repository";
 
 export default async function InventoryPage() {
-  const dataset = await getDataset();
+  const [{ partStock, suppliers }, stockMovements] = await Promise.all([
+    getInventory(),
+    getStockMovements(),
+  ]);
 
   return (
     <>
@@ -12,9 +15,9 @@ export default async function InventoryPage() {
         title="Estoque de peças"
       />
       <InventoryManager
-        partStock={dataset.partStock}
-        stockMovements={dataset.stockMovements}
-        suppliers={dataset.suppliers}
+        partStock={partStock}
+        stockMovements={stockMovements}
+        suppliers={suppliers}
       />
     </>
   );

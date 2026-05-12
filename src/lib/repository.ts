@@ -36,6 +36,7 @@ import type {
 
 let demoDataset = loadLocalDataset();
 
+const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.NETLIFY);
 const backupDirectory = join(process.cwd(), "data", "backups");
 const uploadDirectory = join(process.cwd(), "data", "uploads");
 
@@ -73,6 +74,7 @@ type MaintenanceInput = {
   type: string;
   mechanic: string;
   notes?: string | null;
+  status: MaintenanceStatus;
   parts: Array<{
     partStockId?: string | null;
     name?: string;
@@ -607,12 +609,28 @@ function backupFileName(type: BackupRecord["type"]) {
 }
 
 function writeBackupFile(dataset: Dataset, type: BackupRecord["type"], createdBy: string) {
-  mkdirSync(backupDirectory, { recursive: true });
   const source = isDatabaseConfigured() ? "postgresql" : "local-persistent-store";
   const fileName = backupFileName(type);
+  const createdAt = new Date().toISOString();
+
+  if (IS_SERVERLESS) {
+    return {
+      id: randomUUID(),
+      type,
+      status: "SUCCESS" as const,
+      fileName: `${fileName} (Cloud)`,
+      size: 0,
+      source,
+      createdBy,
+      createdAt,
+      message: "Backup virtual (disco desativado em nuvem)",
+    };
+  }
+
+  mkdirSync(backupDirectory, { recursive: true });
   const filePath = join(backupDirectory, fileName);
   const payload = {
-    generatedAt: new Date().toISOString(),
+    generatedAt: createdAt,
     source,
     type,
     data: dataset,
@@ -629,12 +647,16 @@ function writeBackupFile(dataset: Dataset, type: BackupRecord["type"], createdBy
     size,
     source,
     createdBy,
-    createdAt: payload.generatedAt,
+    createdAt,
     message: null,
   };
 }
 
 function pruneLocalBackups(records: BackupRecord[], retentionDays: number) {
+  if (IS_SERVERLESS) {
+    return records;
+  }
+
   const threshold = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   const retained: BackupRecord[] = [];
 
@@ -687,6 +709,298 @@ async function ensureAutomaticBackup(dataset: Dataset) {
     settings.backupRetentionDays,
   );
   persistLocalDataset();
+}
+
+export async function getNotifications(): Promise<AppNotification[]> {
+  return withDb(
+    async () => {
+      const items = await prisma.notification.findMany({
+        include: { vehicle: true },
+        orderBy: { createdAt: "desc" },
+      });
+
+      return items.map((notification) => ({
+        id: notification.id,
+        title: notification.title,
+        message: notification.message,
+        type: notification.type as NotificationType,
+        read: notification.read,
+        dueDate: notification.dueDate ? inputDate(notification.dueDate) : null,
+        vehicleId: notification.vehicleId,
+        vehicleName: notification.vehicle?.name ?? null,
+        createdAt: inputDate(notification.createdAt),
+      }));
+    },
+    () => demoDataset.notifications,
+  );
+}
+
+export async function getSettings(): Promise<CompanySettings> {
+  return withDb(
+    async () => {
+      const setting = await prisma.appSetting.findUnique({ where: { id: "default" } });
+      return toCompanySettings(
+        setting
+          ? {
+              cooperativeName: setting.cooperativeName,
+              logoUrl: setting.logoUrl,
+              theme: setting.theme as CompanySettings["theme"],
+              currency: setting.currency,
+              timezone: setting.timezone,
+              backupFrequency: setting.backupFrequency as CompanySettings["backupFrequency"],
+              backupRetentionDays: setting.backupRetentionDays,
+              notificationsEnabled: setting.notificationsEnabled,
+              sessionTimeoutMinutes: setting.sessionTimeoutMinutes,
+            }
+          : null,
+      );
+    },
+    () => demoDataset.companySettings,
+  );
+}
+
+export async function getOilChanges(): Promise<OilChange[]> {
+  return withDb(
+    async () => {
+      const items = await prisma.oilChange.findMany({
+        include: { vehicle: true },
+        orderBy: { date: "desc" },
+      });
+      return items.map((oilChange) => ({
+        id: oilChange.id,
+        vehicleId: oilChange.vehicleId,
+        vehicleName: oilChange.vehicle.name,
+        oilType: oilChange.oilType,
+        liters: Number(oilChange.liters),
+        valuePerLiter: Number(oilChange.valuePerLiter),
+        totalValue: Number(oilChange.totalValue),
+        date: inputDate(oilChange.date),
+      }));
+    },
+    () => demoDataset.oilChanges,
+  );
+}
+
+export async function getFuelLogs(): Promise<FuelLog[]> {
+  return withDb(
+    async () => {
+      const items = await prisma.fuelLog.findMany({
+        include: { vehicle: true },
+        orderBy: { date: "desc" },
+      });
+      return items.map((fuel) => ({
+        id: fuel.id,
+        vehicleId: fuel.vehicleId,
+        vehicleName: fuel.vehicle.name,
+        fuelType: fuel.fuelType,
+        liters: Number(fuel.liters),
+        pricePerLiter: Number(fuel.pricePerLiter),
+        totalValue: Number(fuel.totalValue),
+        station: fuel.station,
+        date: inputDate(fuel.date),
+      }));
+    },
+    () => demoDataset.fuelLogs,
+  );
+}
+
+export async function getFinanceEntries(): Promise<FinancialEntry[]> {
+  return withDb(
+    async () => {
+      const items = await prisma.financialEntry.findMany({
+        include: { vehicle: true, serviceMotorcycle: true },
+        orderBy: { date: "desc" },
+      });
+      return items.map((entry) => ({
+        id: entry.id,
+        kind: entry.kind as FinancialKind,
+        category: entry.category,
+        description: entry.description,
+        value: Number(entry.value),
+        date: inputDate(entry.date),
+        vehicleId: entry.vehicleId,
+        vehicleName: entry.vehicle?.name ?? null,
+        serviceMotorcycleId: entry.serviceMotorcycleId,
+        serviceMotorcycleName: entry.serviceMotorcycle
+          ? `${entry.serviceMotorcycle.brand} ${entry.serviceMotorcycle.model}`
+          : null,
+      }));
+    },
+    () => demoDataset.financialEntries,
+  );
+}
+
+export async function getStockMovements(): Promise<StockMovement[]> {
+  return withDb(
+    async () => {
+      const items = await prisma.stockMovement.findMany({
+        include: { partStock: true, supplier: true },
+        orderBy: { date: "desc" },
+      });
+      return items.map(toStockMovement);
+    },
+    () => demoDataset.stockMovements,
+  );
+}
+
+export async function getServiceMotorcycles(): Promise<ServiceMotorcycle[]> {
+  return withDb(
+    async () => {
+      const items = await prisma.serviceMotorcycle.findMany({ orderBy: { createdAt: "desc" } });
+      return items.map(toServiceMotorcycle);
+    },
+    () => demoDataset.serviceMotorcycles,
+  );
+}
+
+export async function getMotorcycleTrips(): Promise<MotorcycleTrip[]> {
+  return withDb(
+    async () => {
+      const items = await prisma.motorcycleTrip.findMany({
+        include: {
+          serviceMotorcycle: true,
+          fine: { include: { serviceMotorcycle: true } },
+        },
+        orderBy: { departureAt: "desc" },
+      });
+      return items.map(toMotorcycleTrip);
+    },
+    () => demoDataset.motorcycleTrips,
+  );
+}
+
+export async function getMotorcycleFines(): Promise<MotorcycleFine[]> {
+  return withDb(
+    async () => {
+      const items = await prisma.motorcycleFine.findMany({
+        include: { serviceMotorcycle: true },
+        orderBy: { date: "desc" },
+      });
+      return items.map(toMotorcycleFine);
+    },
+    () => demoDataset.motorcycleFines,
+  );
+}
+
+export async function getBackupRecords(): Promise<BackupRecord[]> {
+  return withDb(
+    async () => {
+      const items = await prisma.backupRecord.findMany({ orderBy: { createdAt: "desc" } });
+      return items.map((record) => ({
+        id: record.id,
+        type: record.type as BackupRecord["type"],
+        status: record.status as BackupRecord["status"],
+        fileName: record.fileName,
+        size: record.size,
+        source: record.source,
+        createdBy: record.createdBy,
+        createdAt: record.createdAt.toISOString(),
+        message: record.message,
+      }));
+    },
+    () => demoDataset.backupRecords,
+  );
+}
+
+export async function getSuppliers(): Promise<Supplier[]> {
+  return withDb(
+    async () => {
+      const items = await prisma.supplier.findMany({ orderBy: { name: "asc" } });
+      return items.map((supplier) => ({
+        id: supplier.id,
+        name: supplier.name,
+        contact: supplier.contact,
+        email: supplier.email,
+        phone: supplier.phone,
+        document: supplier.document,
+      }));
+    },
+    () => demoDataset.suppliers,
+  );
+}
+
+export async function getInventory() {
+  return withDb(
+    async () => {
+      const [partStock, suppliers] = await Promise.all([
+        prisma.partStock.findMany({
+          where: { deletedAt: null },
+          include: {
+            supplier: true,
+            stockMovements: {
+              orderBy: { date: "desc" },
+              take: 1,
+            },
+          },
+          orderBy: { name: "asc" },
+        }),
+        prisma.supplier.findMany({ orderBy: { name: "asc" } }),
+      ]);
+
+      return {
+        partStock: partStock.map(toPartStock),
+        suppliers: suppliers.map((supplier) => ({
+          id: supplier.id,
+          name: supplier.name,
+          contact: supplier.contact,
+          email: supplier.email,
+          phone: supplier.phone,
+          document: supplier.document,
+        })),
+      };
+    },
+    () => ({
+      partStock: demoDataset.partStock,
+      suppliers: demoDataset.suppliers,
+    }),
+  );
+}
+
+export async function getMaintenances(): Promise<MaintenanceRecord[]> {
+  return withDb(
+    async () => {
+      const records = await prisma.maintenance.findMany({
+        include: {
+          vehicle: true,
+          parts: true,
+        },
+        orderBy: { date: "desc" },
+      });
+
+      return records.map((maintenance) => ({
+        id: maintenance.id,
+        vehicleId: maintenance.vehicleId,
+        vehicleName: maintenance.vehicle.name,
+        date: inputDate(maintenance.date),
+        type: maintenance.type,
+        mechanic: maintenance.mechanic,
+        notes: maintenance.notes,
+        totalValue: Number(maintenance.totalValue),
+        status: maintenance.status as MaintenanceStatus,
+        concludedAt: maintenance.concludedAt ? maintenance.concludedAt.toISOString() : null,
+        concludedBy: maintenance.concludedBy,
+        parts: maintenance.parts.map((part) => ({
+          id: part.id,
+          partStockId: part.partStockId,
+          name: part.name,
+          quantity: part.quantity,
+          unitValue: Number(part.unitValue),
+          totalValue: Number(part.totalValue),
+        })),
+      }));
+    },
+    () => demoDataset.maintenances,
+  );
+}
+
+export async function getVehicles(): Promise<Vehicle[]> {
+  return withDb(
+    async () => {
+      const vehicles = await prisma.vehicle.findMany({ orderBy: { createdAt: "desc" } });
+      return vehicles.map(toVehicle);
+    },
+    () => demoDataset.vehicles,
+  );
 }
 
 export async function getDataset(): Promise<Dataset> {
@@ -784,6 +1098,9 @@ export async function getDataset(): Promise<Dataset> {
           mechanic: maintenance.mechanic,
           notes: maintenance.notes,
           totalValue: Number(maintenance.totalValue),
+          status: maintenance.status as MaintenanceStatus,
+          concludedAt: maintenance.concludedAt ? maintenance.concludedAt.toISOString() : null,
+          concludedBy: maintenance.concludedBy,
           parts: maintenance.parts.map((part) => ({
             id: part.id,
             partStockId: part.partStockId,
@@ -1059,6 +1376,8 @@ export async function updateVehicle(id: string, input: VehicleInput) {
   return withDb(
     async () => {
       const exitDate = normalizeVehicleExitDate(input);
+      const existing = await prisma.vehicle.findUnique({ where: { id } });
+
       const vehicle = await prisma.vehicle.update({
         where: { id },
         data: {
@@ -1074,6 +1393,17 @@ export async function updateVehicle(id: string, input: VehicleInput) {
         },
       });
 
+      if (input.status === "MAINTENANCE" && existing?.status !== "MAINTENANCE") {
+        await createMaintenance({
+          vehicleId: id,
+          date: new Date().toISOString().slice(0, 10),
+          type: "Preventiva",
+          mechanic: "A definir",
+          status: "ONGOING",
+          parts: [],
+        }).catch(() => null);
+      }
+
       return toVehicle(vehicle);
     },
     () => {
@@ -1083,12 +1413,24 @@ export async function updateVehicle(id: string, input: VehicleInput) {
         throw new Error("Veículo não encontrado.");
       }
 
+      const prevStatus = current.status;
       const vehicle: Vehicle = {
         id,
         ...input,
         plate: input.plate.toUpperCase(),
         exitDate: normalizeVehicleExitDate(input),
       };
+
+      if (input.status === "MAINTENANCE" && prevStatus !== "MAINTENANCE") {
+        createMaintenance({
+          vehicleId: id,
+          date: new Date().toISOString().slice(0, 10),
+          type: "Preventiva",
+          mechanic: "A definir",
+          status: "ONGOING",
+          parts: [],
+        }).catch(() => null);
+      }
 
       demoDataset.maintenances.forEach((maintenance) => {
         if (maintenance.vehicleId === id) {
@@ -1114,6 +1456,72 @@ export async function updateVehicle(id: string, input: VehicleInput) {
       const updated = replaceItem(demoDataset.vehicles, id, vehicle);
       persistLocalDataset();
       return updated;
+    },
+  );
+}
+
+export async function updateMaintenanceStatus(id: string, status: MaintenanceStatus) {
+  return withDb(
+    async () => {
+      const maintenance = await prisma.maintenance.update({
+        where: { id },
+        data: { status },
+      });
+
+      return { id, status: maintenance.status as MaintenanceStatus };
+    },
+    () => {
+      const maintenance = demoDataset.maintenances.find((m) => m.id === id);
+      if (maintenance) {
+        maintenance.status = status;
+      }
+      return { id, status };
+    },
+  );
+}
+
+export async function concludeMaintenance(id: string, userName: string) {
+  return withDb(
+    async () => {
+      const maintenance = await prisma.maintenance.update({
+        where: { id },
+        data: {
+          status: "CONCLUDED",
+          concludedAt: new Date(),
+          concludedBy: userName,
+        },
+      });
+
+      await prisma.vehicle.update({
+        where: { id: maintenance.vehicleId },
+        data: { status: "ACTIVE" },
+      });
+
+      return {
+        id,
+        status: "CONCLUDED" as const,
+        concludedAt: maintenance.concludedAt?.toISOString(),
+        concludedBy: userName,
+      };
+    },
+    () => {
+      const maintenance = demoDataset.maintenances.find((m) => m.id === id);
+      if (!maintenance) throw new Error("Manutenção não encontrada.");
+
+      maintenance.status = "CONCLUDED";
+      maintenance.concludedAt = new Date().toISOString();
+      maintenance.concludedBy = userName;
+
+      const vehicle = demoDataset.vehicles.find((v) => v.id === maintenance.vehicleId);
+      if (vehicle) vehicle.status = "ACTIVE";
+
+      persistLocalDataset();
+      return {
+        id,
+        status: "CONCLUDED" as const,
+        concludedAt: maintenance.concludedAt,
+        concludedBy: userName,
+      };
     },
   );
 }
@@ -1159,6 +1567,7 @@ export async function createMaintenance(input: MaintenanceInput) {
             mechanic: input.mechanic,
             notes: input.notes,
             totalValue,
+            status: input.status,
             parts: {
               create: parts.map((part) => ({
                 partStockId: part.partStockId || null,
@@ -1174,10 +1583,10 @@ export async function createMaintenance(input: MaintenanceInput) {
 
         await Promise.all(
           parts.map((part) =>
-              transaction.partStock.update({
-                where: { id: part.partStockId },
-                data: { quantity: { decrement: part.quantity } },
-              }),
+            transaction.partStock.update({
+              where: { id: part.partStockId },
+              data: { quantity: { decrement: part.quantity } },
+            }),
           ),
         );
 
@@ -1210,6 +1619,12 @@ export async function createMaintenance(input: MaintenanceInput) {
           },
         });
 
+        const isFinished = input.status === "CONCLUDED" || input.status === "CANCELED";
+        await transaction.vehicle.update({
+          where: { id: input.vehicleId },
+          data: { status: isFinished ? "ACTIVE" : "MAINTENANCE" },
+        });
+
         return {
           id: maintenance.id,
           vehicleId: input.vehicleId,
@@ -1219,6 +1634,9 @@ export async function createMaintenance(input: MaintenanceInput) {
           mechanic: maintenance.mechanic,
           notes: maintenance.notes,
           totalValue,
+          status: maintenance.status as MaintenanceStatus,
+          concludedAt: maintenance.concludedAt ? maintenance.concludedAt.toISOString() : null,
+          concludedBy: maintenance.concludedBy,
           parts: maintenance.parts.map((part) => ({
             id: part.id,
             partStockId: part.partStockId,
@@ -1260,6 +1678,8 @@ export async function createMaintenance(input: MaintenanceInput) {
         };
       });
       const totalValue = parts.reduce((total, part) => total + part.totalValue, 0);
+      const isFinished = input.status === "CONCLUDED" || input.status === "CANCELED";
+
       const maintenance: MaintenanceRecord = {
         id: randomUUID(),
         vehicleId: vehicle.id,
@@ -1269,9 +1689,13 @@ export async function createMaintenance(input: MaintenanceInput) {
         mechanic: input.mechanic,
         notes: input.notes,
         totalValue,
+        status: input.status,
+        concludedAt: isFinished ? new Date().toISOString() : null,
+        concludedBy: isFinished ? "Sistema" : null,
         parts,
       };
 
+      vehicle.status = isFinished ? "ACTIVE" : "MAINTENANCE";
       demoDataset.maintenances.unshift(maintenance);
       parts.forEach((part) => {
         demoDataset.stockMovements.unshift({
@@ -1394,6 +1818,9 @@ export async function updateMaintenance(id: string, input: MaintenanceInput) {
             mechanic: input.mechanic,
             notes: input.notes,
             totalValue,
+            status: input.status,
+            concludedAt: (input.status === "CONCLUDED" || input.status === "CANCELED") ? new Date() : null,
+            concludedBy: (input.status === "CONCLUDED" || input.status === "CANCELED") ? "Admin" : null,
             parts: {
               deleteMany: {},
               create: parts.map((part) => ({
@@ -1406,6 +1833,12 @@ export async function updateMaintenance(id: string, input: MaintenanceInput) {
             },
           },
           include: { parts: true },
+        });
+
+        const isFinished = input.status === "CONCLUDED" || input.status === "CANCELED";
+        await transaction.vehicle.update({
+          where: { id: input.vehicleId },
+          data: { status: isFinished ? "ACTIVE" : "MAINTENANCE" },
         });
 
         const linkedEntry = await transaction.financialEntry.findFirst({
@@ -1446,6 +1879,9 @@ export async function updateMaintenance(id: string, input: MaintenanceInput) {
           mechanic: maintenance.mechanic,
           notes: maintenance.notes,
           totalValue,
+          status: maintenance.status as MaintenanceStatus,
+          concludedAt: maintenance.concludedAt ? maintenance.concludedAt.toISOString() : null,
+          concludedBy: maintenance.concludedBy,
           parts: maintenance.parts.map((part) => ({
             id: part.id,
             partStockId: part.partStockId,
@@ -1495,6 +1931,7 @@ export async function updateMaintenance(id: string, input: MaintenanceInput) {
         };
       });
       const totalValue = parts.reduce((total, part) => total + part.totalValue, 0);
+      const isFinished = input.status === "CONCLUDED" || input.status === "CANCELED";
       const next: MaintenanceRecord = {
         id,
         vehicleId: vehicle.id,
@@ -1504,8 +1941,14 @@ export async function updateMaintenance(id: string, input: MaintenanceInput) {
         mechanic: input.mechanic,
         notes: input.notes,
         totalValue,
+        status: input.status,
+        concludedAt: isFinished ? new Date().toISOString() : null,
+        concludedBy: isFinished ? "Admin" : null,
         parts,
       };
+
+      vehicle.status = isFinished ? "ACTIVE" : "MAINTENANCE";
+
       const linkedEntry = demoDataset.financialEntries.find((entry) =>
         matchLinkedExpense(entry, {
           category: "Manutenção",
@@ -3258,7 +3701,7 @@ export async function deleteAttachment(id: string) {
     async () => {
       const attachment = await prisma.attachment.delete({ where: { id } });
       const filePath = getUploadFilePath(attachment.url.split("/").at(-1) ?? "");
-      if (existsSync(filePath)) {
+      if (!IS_SERVERLESS && existsSync(filePath)) {
         unlinkSync(filePath);
       }
       return { id };
@@ -3270,7 +3713,7 @@ export async function deleteAttachment(id: string) {
       }
       const [attachment] = demoDataset.attachments.splice(index, 1);
       const filePath = getUploadFilePath(attachment.url.split("/").at(-1) ?? "");
-      if (existsSync(filePath)) {
+      if (!IS_SERVERLESS && existsSync(filePath)) {
         unlinkSync(filePath);
       }
       persistLocalDataset();

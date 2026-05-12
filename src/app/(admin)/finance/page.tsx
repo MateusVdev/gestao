@@ -1,9 +1,12 @@
 import { FinanceManager } from "@/components/managers";
 import { PageHeader } from "@/components/page";
-import { getDataset } from "@/lib/repository";
+import { getFinanceEntries, getVehicles } from "@/lib/repository";
 
 export default async function FinancePage() {
-  const dataset = await getDataset();
+  const [entries, vehicles] = await Promise.all([
+    getFinanceEntries(),
+    getVehicles(),
+  ]);
 
   return (
     <>
@@ -11,7 +14,7 @@ export default async function FinancePage() {
         description="Entradas, saídas, lucro ou prejuízo, comparação mensal e despesas por veículo."
         title="Controle financeiro"
       />
-      <FinanceManager entries={dataset.financialEntries} vehicles={dataset.vehicles} />
+      <FinanceManager entries={entries} vehicles={vehicles} />
     </>
   );
 }

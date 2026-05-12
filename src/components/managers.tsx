@@ -3,10 +3,14 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  CheckCircle2,
   CircleDollarSign,
+  Clock,
   Droplets,
   Edit3,
+  Eye,
   Fuel,
+  History,
   PackagePlus,
   Plus,
   RotateCcw,
@@ -15,11 +19,21 @@ import {
   Truck,
   UserPlus,
   Wrench,
+  X,
 } from "lucide-react";
 import { FinanceCharts } from "@/components/charts";
 import { Section } from "@/components/page";
 import { buildMonthlyFinancial, buildVehicleExpenses } from "@/lib/analytics";
-import { currency, date, statusClass, statusLabel, stockRisk } from "@/lib/format";
+import {
+  cn,
+  currency,
+  date,
+  maintenanceStatusClass,
+  maintenanceStatusLabel,
+  statusClass,
+  statusLabel,
+  stockRisk,
+} from "@/lib/format";
 import type {
   FinancialEntry,
   FinancialKind,
@@ -107,6 +121,53 @@ function EditButton({ onClick }: { onClick: () => void }) {
     >
       <Edit3 size={14} />
       Editar
+    </button>
+  );
+}
+
+function Badge({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-7 items-center rounded-full border px-2.5 text-[11px] font-semibold uppercase tracking-wider",
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function IconButton({
+  children,
+  icon: Icon,
+  onClick,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  icon: React.ElementType;
+  onClick: () => void;
+  tone?: "neutral" | "teal" | "danger";
+}) {
+  return (
+    <button
+      className={cn(
+        "inline-flex h-9 items-center gap-2 rounded-[8px] border px-3 text-xs font-medium transition hover:-translate-y-0.5",
+        tone === "teal" && "border-teal-300/25 bg-teal-300/10 text-teal-100 hover:bg-teal-300/15",
+        tone === "danger" && "border-rose-400/25 bg-rose-400/8 text-rose-100 hover:bg-rose-400/12",
+        tone === "neutral" && "border-white/10 text-zinc-200 hover:bg-white/7",
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      <Icon size={14} />
+      {children}
     </button>
   );
 }
@@ -591,6 +652,7 @@ function resetMaintenanceForm(vehicles: Vehicle[]) {
     type: "Preventiva",
     mechanic: "",
     notes: "",
+    status: "ONGOING" as MaintenanceStatus,
   };
 }
 
@@ -615,6 +677,7 @@ export function MaintenanceManager({
   const router = useRouter();
   const [maintenanceRows, setMaintenanceRows] = useEditableRecords(maintenances);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewingMaintenance, setViewingMaintenance] = useState<MaintenanceRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState(() => resetMaintenanceForm(vehicles));
@@ -644,6 +707,10 @@ export function MaintenanceManager({
   }
 
   function startEdit(maintenance: MaintenanceRecord) {
+    if (maintenance.status === "CONCLUDED" || maintenance.status === "CANCELED") {
+      setViewingMaintenance(maintenance);
+      return;
+    }
     setEditingId(maintenance.id);
     setForm({
       vehicleId: maintenance.vehicleId,
@@ -651,6 +718,7 @@ export function MaintenanceManager({
       type: maintenance.type,
       mechanic: maintenance.mechanic,
       notes: maintenance.notes ?? "",
+      status: maintenance.status,
     });
     setParts(
       maintenance.parts.map((part) => ({
@@ -669,6 +737,38 @@ export function MaintenanceManager({
       items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...value } : item)),
     );
   }
+
+  async function conclude(maintenance: MaintenanceRecord) {
+    if (!confirm(`Deseja concluir a manutencao do veiculo ${maintenance.vehicleName}?`)) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/maintenance/${maintenance.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "CONCLUDE" }),
+      });
+      if (!response.ok) throw new Error("Erro ao concluir.");
+      const saved = await response.json();
+      setMaintenanceRows((items) => items.map((item) => (item.id === saved.id ? { ...item, ...saved } : item)));
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const ongoingMaintenances = useMemo(
+    () => maintenanceRows.filter((m) => m.status === "ONGOING" || m.status === "WAITING_PARTS"),
+    [maintenanceRows],
+  );
+
+  const historyMaintenances = useMemo(
+    () => maintenanceRows.filter((m) => m.status === "CONCLUDED" || m.status === "CANCELED"),
+    [maintenanceRows],
+  );
 
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(320px,0.82fr)_minmax(0,1.18fr)]">
@@ -726,6 +826,18 @@ export function MaintenanceManager({
               <input className={inputClass()} required value={form.mechanic} onChange={(event) => setForm((current) => ({ ...current, mechanic: event.target.value }))} />
             </Field>
           </div>
+          <Field label="Status">
+            <select
+              className={inputClass()}
+              value={form.status}
+              onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as MaintenanceStatus }))}
+            >
+              <option value="ONGOING">Em andamento</option>
+              <option value="WAITING_PARTS">Aguardando peça</option>
+              <option value="CONCLUDED">Concluída</option>
+              <option value="CANCELED">Cancelada</option>
+            </select>
+          </Field>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
@@ -806,38 +918,121 @@ export function MaintenanceManager({
         </form>
       </Section>
 
-      <Section>
-        <PanelTitle
-          description="Histórico completo com edição de peças e custos totais por manutenção."
-          icon={Wrench}
-          title="Histórico de manutenção"
-        />
-        <MobileRecords
-          records={maintenanceRows.map((maintenance) => ({
-            id: maintenance.id,
-            title: maintenance.vehicleName,
-            subtitle: `${maintenance.type} • ${maintenance.mechanic}`,
-            action: <EditButton onClick={() => startEdit(maintenance)} />,
-            lines: [
-              { label: "Peças", value: maintenance.parts.map((part) => `${part.name} (${part.quantity})`).join(", ") },
-              { label: "Data", value: date(maintenance.date) },
-              { label: "Total", value: currency(maintenance.totalValue) },
-            ],
-          }))}
-        />
-        <Table
-          columns={["Veículo", "Tipo", "Peças", "Data", "Mecânico", "Total", "Ações"]}
-          rows={maintenanceRows.map((maintenance) => [
-            <span className="font-medium text-white" key="vehicle">{maintenance.vehicleName}</span>,
-            maintenance.type,
-            <span className="break-words" key="parts">{maintenance.parts.map((part) => `${part.name} (${part.quantity})`).join(", ")}</span>,
-            date(maintenance.date),
-            maintenance.mechanic,
-            <span className="block text-right font-medium text-white" key="total">{currency(maintenance.totalValue)}</span>,
-            <EditButton key="edit" onClick={() => startEdit(maintenance)} />,
-          ])}
-        />
-      </Section>
+      <div className="space-y-4">
+        <Section>
+          <PanelTitle
+            description="Manutencoes ativas que estao sendo realizadas no momento."
+            icon={Clock}
+            title="Manutencoes em andamento"
+          />
+          <MobileRecords
+            records={ongoingMaintenances.map((maintenance) => ({
+              id: maintenance.id,
+              title: maintenance.vehicleName,
+              subtitle: `${maintenance.type} • ${maintenance.mechanic}`,
+              action: (
+                <div className="flex gap-2">
+                  <IconButton
+                    icon={CheckCircle2}
+                    onClick={() => conclude(maintenance)}
+                    tone="teal"
+                  >
+                    Concluir
+                  </IconButton>
+                  <EditButton onClick={() => startEdit(maintenance)} />
+                </div>
+              ),
+              lines: [
+                {
+                  label: "Status",
+                  value: (
+                    <span className={`rounded-full border px-2 py-1 text-xs ${maintenanceStatusClass(maintenance.status)}`}>
+                      {maintenanceStatusLabel(maintenance.status)}
+                    </span>
+                  ),
+                },
+                { label: "Data", value: date(maintenance.date) },
+                { label: "Total", value: currency(maintenance.totalValue) },
+              ],
+            }))}
+          />
+          <Table
+            columns={["Veículo", "Status", "Tipo", "Data", "Total", "Ações"]}
+            rows={ongoingMaintenances.map((maintenance) => [
+              <span className="font-medium text-white" key="vehicle">{maintenance.vehicleName}</span>,
+              <span className={`rounded-full border px-2 py-1 text-xs ${maintenanceStatusClass(maintenance.status)}`} key="status">
+                {maintenanceStatusLabel(maintenance.status)}
+              </span>,
+              maintenance.type,
+              date(maintenance.date),
+              <span className="font-medium text-white" key="total">{currency(maintenance.totalValue)}</span>,
+              <div className="flex gap-2" key="actions">
+                <IconButton
+                  icon={CheckCircle2}
+                  onClick={() => conclude(maintenance)}
+                  tone="teal"
+                >
+                  Concluir
+                </IconButton>
+                <EditButton onClick={() => startEdit(maintenance)} />
+              </div>,
+            ])}
+          />
+        </Section>
+
+        <Section>
+          <PanelTitle
+            description="Registros de manutencoes ja finalizadas ou canceladas."
+            icon={History}
+            title="Historico de manutencoes"
+          />
+          <MobileRecords
+            records={historyMaintenances.map((maintenance) => ({
+              id: maintenance.id,
+              title: maintenance.vehicleName,
+              subtitle: `${maintenance.type} • ${maintenance.mechanic}`,
+              action: <IconButton icon={Eye} onClick={() => setViewingMaintenance(maintenance)}>Ver</IconButton>,
+              lines: [
+                {
+                  label: "Status",
+                  value: (
+                    <span className={`rounded-full border px-2 py-1 text-xs ${maintenanceStatusClass(maintenance.status)}`}>
+                      {maintenanceStatusLabel(maintenance.status)}
+                    </span>
+                  ),
+                },
+                { label: "Data", value: date(maintenance.date) },
+                { label: "Concluída em", value: maintenance.concludedAt ? date(maintenance.concludedAt) : "-" },
+                { label: "Total", value: currency(maintenance.totalValue) },
+              ],
+            }))}
+          />
+          <Table
+            columns={["Veículo", "Status", "Tipo", "Data Início", "Data Fim", "Total", "Ações"]}
+            rows={historyMaintenances.map((maintenance) => [
+              <span className="font-medium text-white" key="vehicle">{maintenance.vehicleName}</span>,
+              <span className={`rounded-full border px-2 py-1 text-xs ${maintenanceStatusClass(maintenance.status)}`} key="status">
+                {maintenanceStatusLabel(maintenance.status)}
+              </span>,
+              maintenance.type,
+              date(maintenance.date),
+              maintenance.concludedAt ? date(maintenance.concludedAt) : "-",
+              <span className="font-medium text-white" key="total">{currency(maintenance.totalValue)}</span>,
+              <IconButton
+                icon={Eye}
+                key="view"
+                onClick={() => setViewingMaintenance(maintenance)}
+              >
+                Visualizar
+              </IconButton>,
+            ])}
+          />
+        </Section>
+      </div>
+
+      {viewingMaintenance ? (
+        <MaintenanceDetailsModal maintenance={viewingMaintenance} onClose={() => setViewingMaintenance(null)} />
+      ) : null}
     </div>
   );
 }
@@ -872,6 +1067,115 @@ function TotalPreview({ value }: { value: number }) {
     <div className="flex items-center justify-between gap-4 rounded-[8px] border border-white/10 bg-white/[0.03] px-3 py-2">
       <span className="text-sm text-zinc-400">Valor total</span>
       <strong className="shrink-0 text-white">{currency(value || 0)}</strong>
+    </div>
+  );
+}
+
+function MaintenanceDetailsModal({
+  maintenance,
+  onClose,
+}: {
+  maintenance: MaintenanceRecord;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="app-surface max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-[8px] shadow-2xl">
+        <div className="flex items-center justify-between gap-4 border-b border-white/10 p-4">
+          <PanelTitle
+            icon={Wrench}
+            meta={`ID: ${maintenance.id}`}
+            title="Detalhes da manutenção"
+          />
+          <button
+            className="grid h-9 w-9 place-items-center rounded-[8px] border border-white/10 text-zinc-300 transition hover:bg-white/7 hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={17} />
+          </button>
+        </div>
+        <div className="overflow-auto p-5">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Veículo</p>
+                <p className="mt-1 font-semibold text-white text-lg">{maintenance.vehicleName}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Mecânico</p>
+                <p className="mt-1 text-zinc-200">{maintenance.mechanic}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Tipo de Serviço</p>
+                <Badge className="mt-2 border-white/10 bg-white/5 text-zinc-300">{maintenance.type}</Badge>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Status Atual</p>
+                <Badge className={`mt-2 ${maintenanceStatusClass(maintenance.status)}`}>
+                  {maintenanceStatusLabel(maintenance.status)}
+                </Badge>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Data de Início</p>
+                <p className="mt-1 text-zinc-300">{date(maintenance.date)}</p>
+              </div>
+              {maintenance.concludedAt ? (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Data de Conclusão</p>
+                  <p className="mt-1 text-emerald-300">{date(maintenance.concludedAt)}</p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-8">
+            <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Peças Utilizadas</p>
+            <div className="rounded-[8px] border border-white/10 overflow-hidden">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-white/5 text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+                  <tr>
+                    <th className="px-4 py-2">Peça</th>
+                    <th className="px-4 py-2 text-right">Qtd</th>
+                    <th className="px-4 py-2 text-right">Valor Unit</th>
+                    <th className="px-4 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {maintenance.parts.map((part) => (
+                    <tr key={part.id}>
+                      <td className="px-4 py-3 text-zinc-200">{part.name}</td>
+                      <td className="px-4 py-3 text-right text-zinc-400">{part.quantity}</td>
+                      <td className="px-4 py-3 text-right text-zinc-400">{currency(part.unitValue)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-white">{currency(part.totalValue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-white/[0.02] font-bold">
+                  <tr>
+                    <td className="px-4 py-3 text-zinc-400" colSpan={3}>Total da Manutenção</td>
+                    <td className="px-4 py-3 text-right text-teal-300 text-lg">{currency(maintenance.totalValue)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          {maintenance.notes ? (
+            <div className="mt-8">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Observações</p>
+              <div className="rounded-[8px] border border-white/10 bg-white/5 p-4 text-sm text-zinc-300 leading-relaxed italic">
+                "{maintenance.notes}"
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="border-t border-white/10 p-4 flex justify-end">
+           <SecondaryButton onClick={onClose}>Fechar detalhes</SecondaryButton>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { getCurrentUser } from "@/lib/auth";
-import { getDataset } from "@/lib/repository";
+import { getNotifications, getSettings } from "@/lib/repository";
 
 export default async function AdminLayout({
   children,
@@ -14,10 +14,13 @@ export default async function AdminLayout({
     redirect("/login");
   }
 
-  const dataset = await getDataset();
+  const [notifications, settings] = await Promise.all([
+    getNotifications(),
+    getSettings(),
+  ]);
 
   return (
-    <AppShell notifications={dataset.notifications} settings={dataset.companySettings} user={user}>
+    <AppShell notifications={notifications} settings={settings} user={user}>
       {children}
     </AppShell>
   );

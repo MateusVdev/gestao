@@ -4,6 +4,7 @@ export type FinancialKind = "INCOME" | "EXPENSE";
 export type NotificationType = "INFO" | "WARNING" | "DANGER" | "SUCCESS";
 export type StockMovementKind = "IN" | "OUT" | "ADJUSTMENT";
 export type ServiceMotorcycleStatus = "GARAGE" | "IN_SERVICE" | "MAINTENANCE" | "UNAVAILABLE";
+export type MaintenanceStatus = "ONGOING" | "WAITING_PARTS" | "CONCLUDED" | "CANCELED";
 export type MotorcycleFinePaymentStatus = "PENDING" | "PARTIAL" | "PAID";
 
 export type AppUser = {
@@ -44,6 +45,9 @@ export type MaintenanceRecord = {
   mechanic: string;
   notes?: string | null;
   totalValue: number;
+  status: MaintenanceStatus;
+  concludedAt?: string | null;
+  concludedBy?: string | null;
   parts: MaintenancePart[];
 };
 

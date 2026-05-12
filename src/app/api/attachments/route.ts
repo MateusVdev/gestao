@@ -68,6 +68,11 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) {
       throw new Error("Arquivo nao enviado.");
     }
+
+    if (process.env.VERCEL || process.env.NETLIFY) {
+      throw new Error("O envio de anexos esta desativado neste ambiente (Serverless). Utilize um serviço de armazenamento em nuvem para producao.");
+    }
+
     if (!ownerTypes.has(ownerType) || !ownerId) {
       throw new Error("Modulo ou registro invalido para o anexo.");
     }

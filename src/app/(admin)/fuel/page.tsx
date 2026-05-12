@@ -1,9 +1,12 @@
 import { PageHeader } from "@/components/page";
 import { FuelManager } from "@/components/managers";
-import { getDataset } from "@/lib/repository";
+import { getFuelLogs, getVehicles } from "@/lib/repository";
 
 export default async function FuelPage() {
-  const dataset = await getDataset();
+  const [fuelLogs, vehicles] = await Promise.all([
+    getFuelLogs(),
+    getVehicles(),
+  ]);
 
   return (
     <>
@@ -11,7 +14,7 @@ export default async function FuelPage() {
         description="Controle de combustível por veículo, posto, litros, preço e despesa total."
         title="Controle de combustível"
       />
-      <FuelManager fuelLogs={dataset.fuelLogs} vehicles={dataset.vehicles} />
+      <FuelManager fuelLogs={fuelLogs} vehicles={vehicles} />
     </>
   );
 }

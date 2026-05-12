@@ -23,6 +23,7 @@ export const maintenanceSchema = z.object({
   type: z.string().min(2),
   mechanic: z.string().min(2),
   notes: z.string().optional().nullable(),
+  status: z.enum(["ONGOING", "WAITING_PARTS", "CONCLUDED", "CANCELED"]),
   parts: z
     .array(
       z.object({
@@ -32,7 +33,7 @@ export const maintenanceSchema = z.object({
         unitValue: z.coerce.number().min(0),
       }),
     )
-    .min(1),
+    .default([]),
 });
 
 export const oilSchema = z.object({
