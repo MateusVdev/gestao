@@ -1,5 +1,8 @@
 import type {
   AppNotification,
+  NotificationPriority,
+  NotificationStatus,
+  NotificationType,
   DashboardData,
   Dataset,
   DailyFleetMetric,
@@ -892,7 +895,7 @@ export function buildReportData(
 }
 
 export function unreadCount(notifications: AppNotification[]) {
-  return notifications.filter((notification) => !notification.read).length;
+  return notifications.filter((notification) => notification.status === "UNREAD").length;
 }
 
 export function stockRisk(part: PartStock) {

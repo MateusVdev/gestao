@@ -241,10 +241,10 @@ enum NotificationStatus {
 }
 
 enum NotificationPriority {
-  LOW
-  MEDIUM
-  HIGH
   CRITICAL
+  HIGH
+  MEDIUM
+  LOW
 }
 
 model Notification {

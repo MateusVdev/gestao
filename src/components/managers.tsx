@@ -39,6 +39,10 @@ import type {
   FinancialKind,
   FuelLog,
   MaintenanceRecord,
+  MaintenanceStatus,
+  NotificationPriority,
+  NotificationStatus,
+  NotificationType,
   OilChange,
   PartStock,
   Supplier,
@@ -175,10 +179,12 @@ function IconButton({
 function PanelTitle({
   description,
   icon: Icon,
+  meta,
   title,
 }: {
-  description: string;
+  description?: string;
   icon: React.ElementType;
+  meta?: string;
   title: string;
 }) {
   return (
@@ -187,8 +193,15 @@ function PanelTitle({
         <Icon size={19} />
       </div>
       <div className="min-w-0">
-        <h2 className="text-base font-semibold text-white">{title}</h2>
-        <p className="mt-1 text-sm leading-6 text-zinc-500">{description}</p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h2 className="text-base font-semibold text-white tracking-tight">{title}</h2>
+          {meta ? (
+            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+              {meta}
+            </span>
+          ) : null}
+        </div>
+        {description ? <p className="mt-1 text-sm leading-6 text-zinc-500">{description}</p> : null}
       </div>
     </div>
   );

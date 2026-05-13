@@ -1064,27 +1064,33 @@ export function ServiceMotorcyclesManager({
   }, []);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      const focus = new URLSearchParams(window.location.search).get("focus");
-      if (!focus) return;
+    const focus = new URLSearchParams(window.location.search).get("focus");
+    if (!focus) return;
 
-      const [kind, id] = focus.split(":");
-      if (kind === "fine" && id) {
-        const fine = fineRows.find((item) => item.id === id);
-        if (fine) {
-          setSelectedFine(fine);
-        }
-      }
-      if (kind === "motorcycle" && id) {
-        const motorcycle = motorcycleRows.find((item) => item.id === id);
-        if (motorcycle) {
-          setQuery(motorcycle.plate);
-        }
-      }
-    }, 0);
+    const [kind, id] = focus.split(":");
+    let found = false;
 
-    return () => window.clearTimeout(timeout);
-  }, [fineRows, motorcycleRows]);
+    if (kind === "fine" && id) {
+      const fine = fineRows.find((item) => item.id === id);
+      if (fine) {
+        setSelectedFine(fine);
+        found = true;
+      }
+    }
+    if (kind === "motorcycle" && id) {
+      const motorcycle = motorcycleRows.find((item) => item.id === id);
+      if (motorcycle) {
+        setQuery(motorcycle.plate);
+        found = true;
+      }
+    }
+
+    if (found) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("focus");
+      router.replace(url.pathname + url.search, { scroll: false });
+    }
+  }, [fineRows, motorcycleRows, router]);
 
   const today = toLocalDate(now);
   const currentTime = toLocalTime(now);

@@ -1,13 +1,28 @@
-export type UserRole = "ADMIN" | "OPERATOR";
-export type VehicleStatus = "ACTIVE" | "MAINTENANCE" | "INACTIVE" | "ALERT";
-export type FinancialKind = "INCOME" | "EXPENSE";
-export type NotificationType = "INFO" | "WARNING" | "DANGER" | "SUCCESS";
-export type NotificationStatus = "UNREAD" | "READ" | "RESOLVED";
-export type NotificationPriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-export type StockMovementKind = "IN" | "OUT" | "ADJUSTMENT";
-export type ServiceMotorcycleStatus = "GARAGE" | "IN_SERVICE" | "MAINTENANCE" | "UNAVAILABLE";
-export type MaintenanceStatus = "ONGOING" | "WAITING_PARTS" | "CONCLUDED" | "CANCELED";
-export type MotorcycleFinePaymentStatus = "PENDING" | "PARTIAL" | "PAID";
+import type {
+  FinancialKind,
+  MaintenanceStatus,
+  MotorcycleFineStatus,
+  NotificationPriority,
+  NotificationStatus,
+  NotificationType,
+  ServiceMotorcycleStatus,
+  StockMovementKind,
+  UserRole,
+  VehicleStatus,
+} from "@prisma/client";
+
+export type {
+  FinancialKind,
+  MaintenanceStatus,
+  MotorcycleFineStatus,
+  NotificationPriority,
+  NotificationStatus,
+  NotificationType,
+  ServiceMotorcycleStatus,
+  StockMovementKind,
+  UserRole,
+  VehicleStatus,
+};
 
 export type AppUser = {
   id: string;
@@ -171,7 +186,7 @@ export type MotorcycleFine = {
   tripId?: string | null;
   value: number;
   paidAmount: number;
-  paymentStatus: MotorcycleFinePaymentStatus;
+  paymentStatus: MotorcycleFineStatus;
   paidBy?: string | null;
   authorizedBy?: string | null;
   paidAt?: string | null;
@@ -185,7 +200,7 @@ export type MotorcycleFine = {
 export type FinePaymentHistory = {
   id: string;
   paidAmount: number;
-  paymentStatus: MotorcycleFinePaymentStatus;
+  paymentStatus: MotorcycleFineStatus;
   paidBy?: string | null;
   authorizedBy?: string | null;
   paidAt?: string | null;
@@ -418,9 +433,9 @@ export type ReportData = {
   title: string;
   period: string;
   filters: {
-    vehicle?: string;
-    from?: string;
-    to?: string;
+    vehicle: string | undefined;
+    from: string | undefined;
+    to: string | undefined;
   };
   totals: {
     income: number;

@@ -6,6 +6,9 @@ import { loadLocalDataset, saveLocalDataset } from "@/lib/local-store";
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
 import { buildDashboardData, buildReportData } from "@/lib/analytics";
 import { inputDate, normalizeCurrencyCode } from "@/lib/format";
+import { buildTopParts } from "@/lib/analytics";
+import { buildMonthlyFinancial } from "@/lib/analytics";
+import { currency } from "@/lib/format";
 import type {
   AppNotification,
   Attachment,
@@ -19,8 +22,12 @@ import type {
   FuelLog,
   MaintenancePart,
   MaintenanceRecord,
+  MaintenanceStatus,
   MotorcycleFine,
   MotorcycleTrip,
+  NotificationPriority,
+  NotificationStatus,
+  NotificationType,
   OilChange,
   PartStock,
   ReportData,
@@ -32,6 +39,9 @@ import type {
   VehicleStatus,
   ActivityLog,
   AuditTrailEntry,
+  FinancialKind,
+  DeletedItem,
+  OperationalAlert,
 } from "@/lib/types";
 
 const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.NETLIFY);
@@ -1332,7 +1342,7 @@ export async function getDataset(): Promise<Dataset> {
           orderBy: { departureAt: "desc" },
         }),
         prisma.motorcycleFine.findMany({
-          include: { serviceMotorcycle: true },
+          include: { serviceMotorcycle: true, trip: true },
           orderBy: { date: "desc" },
         }),
         prisma.activityLog.findMany({ orderBy: { createdAt: "desc" } }),
@@ -1416,8 +1426,12 @@ export async function getDataset(): Promise<Dataset> {
           id: notification.id,
           title: notification.title,
           message: notification.message,
-          type: notification.type,
-          read: notification.read,
+          type: notification.type as NotificationType,
+          priority: notification.priority as NotificationPriority,
+          status: notification.status as NotificationStatus,
+          link: notification.link,
+          category: notification.category,
+          entityId: notification.entityId,
           dueDate: notification.dueDate ? inputDate(notification.dueDate) : null,
           vehicleId: notification.vehicleId,
           vehicleName: notification.vehicle?.name ?? null,
@@ -1570,8 +1584,17 @@ export async function getDashboard(): Promise<DashboardData> {
         prisma.vehicle.findMany(),
         prisma.maintenance.findMany({ include: { vehicle: true, parts: true } }),
         prisma.financialEntry.findMany({ include: { vehicle: true, serviceMotorcycle: true } }),
-        prisma.partStock.findMany({ where: { deletedAt: null } }),
-        prisma.stockMovement.findMany(),
+        prisma.partStock.findMany({
+          where: { deletedAt: null },
+          include: {
+            supplier: true,
+            stockMovements: {
+              orderBy: { date: "desc" },
+              take: 1,
+            },
+          },
+        }),
+        prisma.stockMovement.findMany({ include: { partStock: true, supplier: true } }),
         prisma.fuelLog.findMany({ include: { vehicle: true } }),
         prisma.notification.findMany({ 
           where: { status: { in: ["UNREAD", "READ"] } },
@@ -1580,7 +1603,12 @@ export async function getDashboard(): Promise<DashboardData> {
           take: 50 
         }),
         prisma.serviceMotorcycle.findMany(),
-        prisma.motorcycleTrip.findMany({ include: { serviceMotorcycle: true, fine: true } }),
+        prisma.motorcycleTrip.findMany({
+          include: {
+            serviceMotorcycle: true,
+            fine: { include: { serviceMotorcycle: true } },
+          },
+        }),
         prisma.motorcycleFine.findMany({ include: { serviceMotorcycle: true, trip: true } }),
         prisma.appSetting.findUnique({ where: { id: "default" } }),
       ]);
@@ -1721,9 +1749,9 @@ export async function getReport(options: {
         title: options.annual ? "Relatório anual" : "Relatório mensal",
         period: options.annual ? "Ano operacional 2026" : "Período selecionado",
         filters: {
-          vehicle: vehicle?.name,
-          from: options.from,
-          to: options.to,
+          vehicle: vehicle?.name ?? undefined,
+          from: options.from ?? undefined,
+          to: options.to ?? undefined,
         },
         totals: {
           income,
@@ -2004,6 +2032,9 @@ export async function concludeMaintenance(id: string, userName: string) {
           status: "CONCLUDED",
           concludedAt: new Date(),
           concludedBy: userName,
+        },
+        include: {
+          vehicle: true,
         },
       });
 
@@ -3359,7 +3390,8 @@ export async function createStockEntry(input: StockEntryInput) {
           title: "Aumento de preco",
           message: `${part.name} teve aumento de fornecedor acima de 5%.`,
           type: "WARNING",
-          read: false,
+          status: "UNREAD",
+          priority: "MEDIUM",
           createdAt: input.date,
         });
       }
@@ -3579,6 +3611,7 @@ export async function createMotorcycleTrip(input: MotorcycleTripInput) {
             motorcycleId: motorcycle.id,
             motorcycleName: `${motorcycle.brand} ${motorcycle.model}`,
             motorcyclePlate: motorcycle.plate,
+            driver: input.driver,
             tripId,
             value: input.fineValue ?? 0,
             paidAmount: 0,
@@ -4069,7 +4102,11 @@ export async function restoreBackup(payload: unknown, userName: string) {
             title: notification.title,
             message: notification.message,
             type: notification.type,
-            read: notification.read,
+            status: notification.status,
+            priority: notification.priority,
+            link: notification.link,
+            category: notification.category,
+            entityId: notification.entityId,
             dueDate: notification.dueDate ? new Date(notification.dueDate) : null,
             vehicleId: notification.vehicleId,
             createdAt: new Date(notification.createdAt),

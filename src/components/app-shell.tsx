@@ -31,7 +31,14 @@ import {
 } from "lucide-react";
 import { SettingsProvider, useAppSettings } from "@/components/settings-context";
 import { cn } from "@/lib/format";
-import type { AppNotification, AppUser, CompanySettings } from "@/lib/types";
+import type {
+  AppNotification,
+  AppUser,
+  CompanySettings,
+  NotificationPriority,
+  NotificationStatus,
+  NotificationType,
+} from "@/lib/types";
 
 type SearchResult = {
   id: string;

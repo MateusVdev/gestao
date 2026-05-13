@@ -328,6 +328,9 @@ export const demoMaintenances: MaintenanceRecord[] = [
     mechanic: "Oficina Nova Rota",
     notes: "Substituição do conjunto de freio e revisão de suspensão.",
     totalValue: 3849,
+    status: "ONGOING",
+    concludedAt: null,
+    concludedBy: null,
     parts: [
       {
         id: "mnt-part-001",
@@ -356,6 +359,9 @@ export const demoMaintenances: MaintenanceRecord[] = [
     mechanic: "Equipe interna",
     notes: "Revisão programada por quilometragem.",
     totalValue: 1288.5,
+    status: "ONGOING",
+    concludedAt: null,
+    concludedBy: null,
     parts: [
       {
         id: "mnt-part-003",
@@ -384,6 +390,9 @@ export const demoMaintenances: MaintenanceRecord[] = [
     mechanic: "Equipe interna",
     notes: "Troca de filtros e inspeção geral.",
     totalValue: 645.4,
+    status: "CONCLUDED",
+    concludedAt: "2026-04-23",
+    concludedBy: "Administrador",
     parts: [
       {
         id: "mnt-part-005",
@@ -404,6 +413,9 @@ export const demoMaintenances: MaintenanceRecord[] = [
     mechanic: "Pneus Norte Sul",
     notes: "Rodízio e troca de pneus.",
     totalValue: 3290,
+    status: "CONCLUDED",
+    concludedAt: "2026-03-16",
+    concludedBy: "Administrador",
     parts: [
       {
         id: "mnt-part-006",
@@ -424,6 +436,9 @@ export const demoMaintenances: MaintenanceRecord[] = [
     mechanic: "Oficina Rápida Diesel",
     notes: "Correção de ruído em suspensão.",
     totalValue: 1574,
+    status: "CONCLUDED",
+    concludedAt: "2026-02-21",
+    concludedBy: "Administrador",
     parts: [
       {
         id: "mnt-part-007",
@@ -444,6 +459,9 @@ export const demoMaintenances: MaintenanceRecord[] = [
     mechanic: "Equipe interna",
     notes: "Primeira revisão operacional.",
     totalValue: 812,
+    status: "CONCLUDED",
+    concludedAt: "2026-01-20",
+    concludedBy: "Administrador",
     parts: [
       {
         id: "mnt-part-008",
@@ -582,6 +600,7 @@ export const demoMotorcycleFines: MotorcycleFine[] = [
     motorcycleId: "moto-002",
     motorcycleName: "Yamaha Factor 150 UBS",
     motorcyclePlate: "MTS8D91",
+    driver: "Patricia Ramos",
     tripId: "trip-002",
     value: 195.23,
     paidAmount: 0,
@@ -829,7 +848,8 @@ export const demoNotifications: AppNotification[] = [
     title: "Manutenção em andamento",
     message: "Micro-ônibus Urbano está em manutenção corretiva desde 06/05.",
     type: "WARNING",
-    read: false,
+    priority: "HIGH",
+    status: "UNREAD",
     dueDate: "2026-05-12",
     vehicleId: "veh-002",
     vehicleName: "Micro-ônibus Urbano",
@@ -840,7 +860,8 @@ export const demoNotifications: AppNotification[] = [
     title: "Estoque baixo",
     message: "Pastilha de freio dianteira está abaixo do mínimo operacional.",
     type: "DANGER",
-    read: false,
+    priority: "CRITICAL",
+    status: "UNREAD",
     createdAt: "2026-05-07",
   },
   {
@@ -848,7 +869,8 @@ export const demoNotifications: AppNotification[] = [
     title: "Quilometragem crítica",
     message: "Van Escolar 04 ultrapassou o limite recomendado para revisão.",
     type: "WARNING",
-    read: true,
+    priority: "MEDIUM",
+    status: "READ",
     dueDate: "2026-05-15",
     vehicleId: "veh-004",
     vehicleName: "Van Escolar 04",

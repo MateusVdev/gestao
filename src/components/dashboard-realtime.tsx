@@ -280,26 +280,22 @@ export function DashboardRealtime({ initialData }: { initialData: DashboardData 
   const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
-    setRefreshing((isRefreshing) => {
-      if (isRefreshing) return true;
-
-      (async () => {
-        try {
-          const response = await fetch("/api/dashboard", { cache: "no-store" });
-          if (response.ok) {
-            setData(await response.json());
-            setLastUpdatedAt(new Date());
-          }
-        } catch (err) {
-          console.error("Dashboard refresh error:", err);
-        } finally {
-          setRefreshing(false);
-        }
-      })();
-
-      return true;
-    });
-  }, []);
+    if (refreshing) return;
+    
+    setRefreshing(true);
+    try {
+      const response = await fetch("/api/dashboard", { cache: "no-store" });
+      if (response.ok) {
+        const nextData = await response.json();
+        setData(nextData);
+        setLastUpdatedAt(new Date());
+      }
+    } catch (err) {
+      console.error("Dashboard refresh error:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
