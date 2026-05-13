@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { createOilChange, getDataset, recordActivity } from "@/lib/repository";
+import { createOilChange, getOilChanges, recordActivity } from "@/lib/repository";
 import { oilSchema } from "@/lib/validation";
 
 export async function GET() {
@@ -10,8 +10,8 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
-  return NextResponse.json(dataset.oilChanges);
+  const oilChanges = await getOilChanges();
+  return NextResponse.json(oilChanges);
 }
 
 export async function POST(request: Request) {

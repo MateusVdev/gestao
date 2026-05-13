@@ -457,8 +457,11 @@ function buildOperationalAlerts(dataset: Dataset, currentEntries: FinancialEntry
         title: "Produto sem estoque",
         description: `${part.name} esta zerado e precisa de reposicao imediata.`,
         module: "Estoque",
+        category: "STOCK",
+        entityId: part.id,
         targetHref: `/inventory?focus=part:${part.id}`,
         status: "critical",
+        priority: "CRITICAL",
         createdAt,
       });
       return;
@@ -470,8 +473,11 @@ function buildOperationalAlerts(dataset: Dataset, currentEntries: FinancialEntry
         title: "Estoque baixo",
         description: `${part.name} esta com ${part.quantity} un. para minimo de ${part.minQuantity}.`,
         module: "Estoque",
+        category: "STOCK",
+        entityId: part.id,
         targetHref: `/inventory?focus=part:${part.id}`,
         status: part.quantity <= part.minQuantity * 0.5 ? "critical" : "attention",
+        priority: part.quantity <= part.minQuantity * 0.5 ? "HIGH" : "MEDIUM",
         createdAt,
       });
     }
@@ -496,8 +502,11 @@ function buildOperationalAlerts(dataset: Dataset, currentEntries: FinancialEntry
         title: "Aumento de custo de peca",
         description: `${latest.partName} subiu ${Math.round(((latest.unitCost - previous.unitCost) / previous.unitCost) * 100)}% na ultima entrada.`,
         module: "Estoque",
+        category: "STOCK_COST",
+        entityId: partId,
         targetHref: `/inventory?focus=part:${partId}`,
         status: "attention",
+        priority: "MEDIUM",
         createdAt,
       });
     }
@@ -510,14 +519,30 @@ function buildOperationalAlerts(dataset: Dataset, currentEntries: FinancialEntry
       .at(0);
     const stoppedDays = lastTrip ? daysSince(lastTrip.returnAt ?? lastTrip.departureAt) : 30;
 
-    if (motorcycle.status === "MAINTENANCE" || stoppedDays > 14) {
+    if (motorcycle.status === "MAINTENANCE") {
+        alerts.push({
+          id: `motorcycle-maint-${motorcycle.id}`,
+          title: "Moto em manutencao",
+          description: `${motorcycle.brand} ${motorcycle.model} (${motorcycle.plate}) em manutencao.`,
+          module: "Motos",
+          category: "MOTORCYCLE_MAINTENANCE",
+          entityId: motorcycle.id,
+          targetHref: `/service-motorcycles?focus=motorcycle:${motorcycle.id}`,
+          status: "attention",
+          priority: "LOW",
+          createdAt,
+        });
+    } else if (stoppedDays > 14) {
       alerts.push({
         id: `motorcycle-stopped-${motorcycle.id}`,
         title: "Moto parada muitos dias",
         description: `${motorcycle.brand} ${motorcycle.model} esta sem giro operacional ha ${stoppedDays} dias.`,
-        module: "Motos de Servico",
+        module: "Motos",
+        category: "MOTORCYCLE_STOPPED",
+        entityId: motorcycle.id,
         targetHref: `/service-motorcycles?focus=motorcycle:${motorcycle.id}`,
         status: alertStatusClass(stoppedDays, 14, 30),
+        priority: stoppedDays > 30 ? "HIGH" : "MEDIUM",
         createdAt,
       });
     }
@@ -530,16 +555,35 @@ function buildOperationalAlerts(dataset: Dataset, currentEntries: FinancialEntry
       .at(0);
     const overdueDays = lastMaintenance ? daysSince(lastMaintenance.date) : 120;
 
-    if (overdueDays > 90 || vehicle.status === "ALERT") {
+    // NOVO: Veículo parado há mais de 90 dias
+    if (overdueDays > 90) {
       alerts.push({
-        id: `maintenance-overdue-${vehicle.id}`,
-        title: "Manutencao atrasada",
-        description: `${vehicle.name} esta ha ${overdueDays} dias sem manutencao registrada.`,
-        module: "Manutencao",
-        targetHref: `/maintenance?focus=vehicle:${vehicle.id}`,
-        status: alertStatusClass(overdueDays, 90, 150),
+        id: `vehicle-stopped-${vehicle.id}`,
+        title: "Veiculo parado ha mais de 90 dias",
+        description: `${vehicle.name} (${vehicle.plate}) sem movimentacao ou manutencao recente.`,
+        module: "Veiculos",
+        category: "VEHICLE_STOPPED",
+        entityId: vehicle.id,
+        targetHref: `/vehicles?focus=vehicle:${vehicle.id}`,
+        status: "critical",
+        priority: "HIGH",
         createdAt,
       });
+    }
+
+    if (vehicle.status === "MAINTENANCE") {
+        alerts.push({
+          id: `vehicle-maint-${vehicle.id}`,
+          title: "Veiculo em manutencao",
+          description: `${vehicle.name} esta em servico na oficina.`,
+          module: "Manutencao",
+          category: "MAINTENANCE",
+          entityId: vehicle.id,
+          targetHref: `/maintenance?focus=vehicle:${vehicle.id}`,
+          status: "attention",
+          priority: "LOW",
+          createdAt,
+        });
     }
   });
 
@@ -555,8 +599,11 @@ function buildOperationalAlerts(dataset: Dataset, currentEntries: FinancialEntry
         title: "Veiculo acima da media",
         description: `${vehicle.name} esta com gastos acima da media da frota no mes.`,
         module: "Financeiro",
+        category: "FINANCE",
+        entityId: vehicle.name,
         targetHref: "/finance",
         status: "attention",
+        priority: "MEDIUM",
         createdAt,
       });
     });
@@ -573,20 +620,28 @@ function buildOperationalAlerts(dataset: Dataset, currentEntries: FinancialEntry
         title: "Combustivel acima da media",
         description: `${fuel.vehicleName} registrou abastecimento acima da media em ${fuel.station}.`,
         module: "Combustivel",
+        category: "FUEL",
+        entityId: fuel.id,
         targetHref: `/fuel?focus=fuel:${fuel.id}`,
         status: "attention",
+        priority: "MEDIUM",
         createdAt,
       });
     });
 
-  dataset.motorcycleFines.forEach((fine) => {
+  dataset.motorcycleFines
+    .filter(f => f.paymentStatus !== "PAID")
+    .forEach((fine) => {
     alerts.push({
       id: `fine-pending-${fine.id}`,
       title: "Multa pendente",
-      description: `${fine.motorcyclePlate} possui multa de ${currency(fine.value, dataset.companySettings.currency)} para acompanhamento.`,
-      module: "Motos de Servico",
-      targetHref: `/service-motorcycles?focus=fine:${fine.id}`,
+      description: `${fine.motorcyclePlate} possui multa de ${currency(fine.value, dataset.companySettings.currency)} pendente.`,
+      module: "Motos",
+      category: "FINE",
+      entityId: fine.id,
+      targetHref: `/service-motorcycles?tab=fines`,
       status: "critical",
+      priority: "HIGH",
       createdAt,
     });
   });
@@ -604,23 +659,15 @@ function buildOperationalAlerts(dataset: Dataset, currentEntries: FinancialEntry
         title: "Fornecedor sem movimentacao",
         description: `${supplier.name} esta sem compras ha ${inactiveDays} dias.`,
         module: "Fornecedores",
+        category: "SUPPLIER",
+        entityId: supplier.id,
         targetHref: `/suppliers?focus=supplier:${supplier.id}`,
         status: inactiveDays > 120 ? "critical" : "attention",
+        priority: "LOW",
         createdAt,
       });
     }
   });
-
-  if (!alerts.length) {
-    alerts.push({
-      id: "operation-normal",
-      title: "Operacao normal",
-      description: "Nenhum alerta critico detectado nos indicadores atuais.",
-      module: "Operacao",
-      status: "normal",
-      createdAt,
-    });
-  }
 
   return alerts.toSorted((a, b) => {
     const order = { critical: 0, attention: 1, normal: 2 };

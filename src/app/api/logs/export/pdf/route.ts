@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api";
 import { createLinesPdf } from "@/lib/pdf";
-import { getDataset } from "@/lib/repository";
+import { getActivityLogs } from "@/lib/repository";
 
 export async function GET() {
   const { response } = await requireSession();
@@ -10,12 +10,12 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
+  const logs = await getActivityLogs();
   const lines = [
     "Logs de atividades CoopFleet",
-    `Registros: ${dataset.activityLogs.length}`,
+    `Registros: ${logs.length}`,
     "",
-    ...dataset.activityLogs.slice(0, 38).map((log) =>
+    ...logs.slice(0, 38).map((log) =>
       [
         log.date ?? log.createdAt.slice(0, 10),
         log.time ?? "00:00",

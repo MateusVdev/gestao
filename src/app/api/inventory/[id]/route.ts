@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { deletePart, getDataset, recordActivity, updatePart } from "@/lib/repository";
+import { deletePart, getPart, recordActivity, updatePart } from "@/lib/repository";
 import { partSchema } from "@/lib/validation";
 
 export async function PUT(
@@ -15,7 +15,7 @@ export async function PUT(
 
   try {
     const { id } = await context.params;
-    const before = (await getDataset()).partStock.find((part) => part.id === id);
+    const before = await getPart(id);
     const payload = partSchema.parse(await request.json());
     const saved = await updatePart(id, payload);
     await recordActivity({
@@ -46,7 +46,7 @@ export async function DELETE(
 
   try {
     const { id } = await context.params;
-    const before = (await getDataset()).partStock.find((part) => part.id === id);
+    const before = await getPart(id);
     const result = await deletePart(id, user.name);
     await recordActivity({
       userName: user.name,

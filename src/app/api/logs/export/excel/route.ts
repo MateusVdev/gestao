@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { requireSession } from "@/lib/api";
-import { getDataset } from "@/lib/repository";
+import { getActivityLogs, getAuditTrail } from "@/lib/repository";
 
 export async function GET() {
   const { response } = await requireSession();
@@ -10,13 +10,16 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
+  const [logs, auditTrail] = await Promise.all([
+    getActivityLogs(),
+    getAuditTrail(),
+  ]);
   const workbook = XLSX.utils.book_new();
 
   XLSX.utils.book_append_sheet(
     workbook,
     XLSX.utils.json_to_sheet(
-      dataset.activityLogs.map((log) => ({
+      logs.map((log) => ({
         data: log.date ?? log.createdAt.slice(0, 10),
         horario: log.time ?? "00:00",
         usuario: log.userName,
@@ -31,7 +34,7 @@ export async function GET() {
   );
   XLSX.utils.book_append_sheet(
     workbook,
-    XLSX.utils.json_to_sheet(dataset.auditTrail),
+    XLSX.utils.json_to_sheet(auditTrail),
     "Auditoria",
   );
 

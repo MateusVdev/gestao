@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api";
 import { createReportPdf } from "@/lib/pdf";
-import { getDataset, getReport } from "@/lib/repository";
+import { getReport, getSettings } from "@/lib/repository";
 
 export async function GET(request: Request) {
   const { response } = await requireSession();
@@ -11,13 +11,15 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const report = await getReport({
-    vehicleId: url.searchParams.get("vehicleId") || undefined,
-    from: url.searchParams.get("from") || undefined,
-    to: url.searchParams.get("to") || undefined,
-    annual: url.searchParams.get("period") === "annual",
-  });
-  const settings = (await getDataset()).companySettings;
+  const [report, settings] = await Promise.all([
+    getReport({
+      vehicleId: url.searchParams.get("vehicleId") || undefined,
+      from: url.searchParams.get("from") || undefined,
+      to: url.searchParams.get("to") || undefined,
+      annual: url.searchParams.get("period") === "annual",
+    }),
+    getSettings(),
+  ]);
   const pdf = createReportPdf(report, settings.currency);
 
   return new NextResponse(new Uint8Array(pdf), {

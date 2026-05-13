@@ -9,9 +9,15 @@ const SESSION_COOKIE = "coop_session";
 const SESSION_DURATION = 60 * 60 * 8;
 
 function getSecret() {
-  const raw =
-    process.env.AUTH_SECRET ??
-    "coopfleet-development-secret-change-before-production";
+  const raw = process.env.AUTH_SECRET;
+
+  if (!raw) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("CRITICAL SECURITY ERROR: AUTH_SECRET environment variable is missing.");
+    }
+    return new TextEncoder().encode("coopfleet-development-secret-change-before-production");
+  }
+
   return new TextEncoder().encode(raw);
 }
 
@@ -69,27 +75,33 @@ export async function validateCredentials(
 ): Promise<AppUser | null> {
   const normalizedEmail = email.trim().toLowerCase();
 
-  if (isDatabaseConfigured()) {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { email: normalizedEmail },
-      });
-
-      if (user && (await bcrypt.compare(password, user.passwordHash))) {
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        };
-      }
-    } catch {
-      // Falls back to demo credentials when the database is not reachable.
+  if (!isDatabaseConfigured()) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Banco de dados nao configurado em ambiente de producao.");
     }
+
+    if (normalizedEmail === "admin@coopfleet.com" && password === "admin123") {
+      return demoUsers[0] ?? null;
+    }
+
+    return null;
   }
 
-  if (normalizedEmail === "admin@coopfleet.com" && password === "admin123") {
-    return demoUsers[0] ?? null;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (user && (await bcrypt.compare(password, user.passwordHash))) {
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      };
+    }
+  } catch (error) {
+    console.error("Erro ao validar credenciais:", error);
   }
 
   return null;

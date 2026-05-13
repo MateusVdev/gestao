@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { getDataset, recordActivity, updateVehicle } from "@/lib/repository";
+import { getVehicle, recordActivity, updateVehicle } from "@/lib/repository";
 import { vehicleSchema } from "@/lib/validation";
 
 export async function PUT(
@@ -15,15 +15,15 @@ export async function PUT(
 
   try {
     const { id } = await context.params;
-    const before = (await getDataset()).vehicles.find((vehicle) => vehicle.id === id);
+    const before = await getVehicle(id);
     const payload = vehicleSchema.parse(await request.json());
     const saved = await updateVehicle(id, payload);
     await recordActivity({
       userName: user.name,
       action: "UPDATE",
-      module: "Veiculos",
+      module: "Veículos",
       entityId: id,
-      description: `Veiculo ${saved.plate} editado.`,
+      description: `Veiculo ${saved.plate} atualizado.`,
       oldValue: before,
       newValue: saved,
       ...requestAuditMeta(request),

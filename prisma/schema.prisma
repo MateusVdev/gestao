@@ -104,6 +104,9 @@ model Maintenance {
   parts          MaintenancePart[]
   stockMovements StockMovement[]
   attachments    Attachment[]
+
+  @@index([vehicleId])
+  @@index([date])
 }
 
 model MaintenancePart {
@@ -116,6 +119,9 @@ model MaintenancePart {
   quantity      Int
   unitValue     Decimal     @db.Decimal(12, 2)
   totalValue    Decimal     @db.Decimal(12, 2)
+
+  @@index([maintenanceId])
+  @@index([partStockId])
 }
 
 model OilChange {
@@ -129,6 +135,9 @@ model OilChange {
   date          DateTime
   createdAt     DateTime     @default(now())
   attachments   Attachment[]
+
+  @@index([vehicleId])
+  @@index([date])
 }
 
 model FinancialEntry {
@@ -143,6 +152,10 @@ model FinancialEntry {
   serviceMotorcycleId String?
   serviceMotorcycle   ServiceMotorcycle? @relation(fields: [serviceMotorcycleId], references: [id], onDelete: SetNull)
   createdAt           DateTime           @default(now())
+
+  @@index([vehicleId])
+  @@index([serviceMotorcycleId])
+  @@index([date])
 }
 
 model Supplier {
@@ -198,6 +211,10 @@ model StockMovement {
   maintenance     Maintenance?      @relation(fields: [maintenanceId], references: [id], onDelete: SetNull)
   notes           String?
   createdAt       DateTime          @default(now())
+
+  @@index([partStockId])
+  @@index([date])
+  @@index([maintenanceId])
 }
 
 model FuelLog {
@@ -212,18 +229,43 @@ model FuelLog {
   date          DateTime
   createdAt     DateTime     @default(now())
   attachments   Attachment[]
+
+  @@index([vehicleId])
+  @@index([date])
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  RESOLVED
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
 }
 
 model Notification {
-  id        String           @id @default(cuid())
+  id        String               @id @default(cuid())
   title     String
   message   String
-  type      NotificationType @default(INFO)
-  read      Boolean          @default(false)
+  type      NotificationType     @default(INFO)
+  priority  NotificationPriority @default(MEDIUM)
+  status    NotificationStatus   @default(UNREAD)
+  link      String?
+  category  String?
+  entityId  String?
   dueDate   DateTime?
   vehicleId String?
-  vehicle   Vehicle?         @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
-  createdAt DateTime         @default(now())
+  vehicle   Vehicle?             @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([status])
+  @@index([priority])
+  @@index([entityId])
 }
 
 model ServiceMotorcycle {
@@ -258,6 +300,9 @@ model MotorcycleTrip {
   notes               String?
   createdAt           DateTime          @default(now())
   fine                MotorcycleFine?
+
+  @@index([serviceMotorcycleId])
+  @@index([departureAt])
 }
 
 model MotorcycleFine {
@@ -298,6 +343,9 @@ model ActivityLog {
   oldValue    Json?
   newValue    Json?
   metadata    Json?
+
+  @@index([createdAt])
+  @@index([entityId])
 }
 
 model AuditTrail {

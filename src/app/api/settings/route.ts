@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { getDataset, recordActivity, updateCompanySettings } from "@/lib/repository";
+import { getSettings, recordActivity, updateCompanySettings } from "@/lib/repository";
 import { companySettingsSchema } from "@/lib/validation";
 
 export async function GET() {
@@ -10,8 +10,8 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
-  return NextResponse.json(dataset.companySettings);
+  const settings = await getSettings();
+  return NextResponse.json(settings);
 }
 
 export async function PUT(request: Request) {
@@ -22,7 +22,7 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const before = (await getDataset()).companySettings;
+    const before = await getSettings();
     const payload = companySettingsSchema.parse(await request.json());
     const saved = await updateCompanySettings(payload);
     await recordActivity({

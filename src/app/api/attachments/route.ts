@@ -1,17 +1,12 @@
-import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
 import {
   createAttachmentRecord,
-  getDataset,
-  getUploadFilePath,
+  getAttachments,
   recordActivity,
+  uploadFile,
 } from "@/lib/repository";
 import type { AttachmentOwnerType } from "@/lib/types";
-
-export const runtime = "nodejs";
 
 const ownerTypes = new Set([
   "maintenance",
@@ -24,10 +19,6 @@ const ownerTypes = new Set([
   "motorcycle",
 ]);
 
-function safeFileName(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
-}
-
 export async function GET(request: Request) {
   const { response } = await requireSession();
 
@@ -38,10 +29,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const ownerType = url.searchParams.get("ownerType");
   const ownerId = url.searchParams.get("ownerId");
-  const dataset = await getDataset();
+  const attachments = await getAttachments();
 
   return NextResponse.json(
-    dataset.attachments.filter((attachment) => {
+    attachments.filter((attachment) => {
       const sameType = !ownerType || attachment.ownerType === ownerType;
       const sameOwner = !ownerId || attachment.ownerId === ownerId;
       return sameType && sameOwner;
@@ -69,18 +60,16 @@ export async function POST(request: Request) {
       throw new Error("Arquivo nao enviado.");
     }
 
-    if (process.env.VERCEL || process.env.NETLIFY) {
-      throw new Error("O envio de anexos esta desativado neste ambiente (Serverless). Utilize um serviço de armazenamento em nuvem para producao.");
-    }
-
     if (!ownerTypes.has(ownerType) || !ownerId) {
       throw new Error("Modulo ou registro invalido para o anexo.");
     }
 
-    const storedName = `${randomUUID()}-${safeFileName(file.name)}`;
-    const filePath = getUploadFilePath(storedName);
-    mkdirSync(dirname(filePath), { recursive: true });
-    writeFileSync(filePath, Buffer.from(await file.arrayBuffer()));
+    const url = await uploadFile({
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      buffer: Buffer.from(await file.arrayBuffer()),
+    });
 
     const attachment = await createAttachmentRecord({
       ownerType: ownerType as AttachmentOwnerType,
@@ -89,7 +78,7 @@ export async function POST(request: Request) {
       fileName: file.name,
       fileType: file.type || "application/octet-stream",
       fileSize: file.size,
-      url: `/api/uploads/${storedName}`,
+      url,
       uploadedBy: user.name,
       description: description || null,
       module: ownerModule || ownerType,

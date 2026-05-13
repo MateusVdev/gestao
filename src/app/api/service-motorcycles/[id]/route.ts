@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { getDataset, recordActivity, updateServiceMotorcycle } from "@/lib/repository";
+import { getServiceMotorcycle, recordActivity, updateServiceMotorcycle } from "@/lib/repository";
 import { serviceMotorcycleSchema } from "@/lib/validation";
 
 export async function PUT(
@@ -15,7 +15,7 @@ export async function PUT(
 
   try {
     const { id } = await context.params;
-    const before = (await getDataset()).serviceMotorcycles.find((item) => item.id === id);
+    const before = await getServiceMotorcycle(id);
     const payload = serviceMotorcycleSchema.parse(await request.json());
     const saved = await updateServiceMotorcycle(id, payload);
     await recordActivity({

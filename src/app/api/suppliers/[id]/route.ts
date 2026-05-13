@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { getDataset, recordActivity, updateSupplier } from "@/lib/repository";
+import { getSupplier, recordActivity, updateSupplier } from "@/lib/repository";
 import { supplierSchema } from "@/lib/validation";
 
 export async function PUT(
@@ -15,7 +15,7 @@ export async function PUT(
 
   try {
     const { id } = await context.params;
-    const before = (await getDataset()).suppliers.find((item) => item.id === id);
+    const before = await getSupplier(id);
     const payload = supplierSchema.parse(await request.json());
     const saved = await updateSupplier(id, payload);
     await recordActivity({

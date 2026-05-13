@@ -2,6 +2,8 @@ export type UserRole = "ADMIN" | "OPERATOR";
 export type VehicleStatus = "ACTIVE" | "MAINTENANCE" | "INACTIVE" | "ALERT";
 export type FinancialKind = "INCOME" | "EXPENSE";
 export type NotificationType = "INFO" | "WARNING" | "DANGER" | "SUCCESS";
+export type NotificationStatus = "UNREAD" | "READ" | "RESOLVED";
+export type NotificationPriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type StockMovementKind = "IN" | "OUT" | "ADJUSTMENT";
 export type ServiceMotorcycleStatus = "GARAGE" | "IN_SERVICE" | "MAINTENANCE" | "UNAVAILABLE";
 export type MaintenanceStatus = "ONGOING" | "WAITING_PARTS" | "CONCLUDED" | "CANCELED";
@@ -136,7 +138,11 @@ export type AppNotification = {
   title: string;
   message: string;
   type: NotificationType;
-  read: boolean;
+  priority: NotificationPriority;
+  status: NotificationStatus;
+  link?: string | null;
+  category?: string | null;
+  entityId?: string | null;
   dueDate?: string | null;
   vehicleId?: string | null;
   vehicleName?: string | null;
@@ -306,8 +312,11 @@ export type OperationalAlert = {
   title: string;
   description: string;
   module: string;
+  category?: string;
+  entityId?: string;
   targetHref?: string;
   status: "critical" | "attention" | "normal";
+  priority?: NotificationPriority;
   createdAt: string;
 };
 

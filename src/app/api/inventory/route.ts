@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { createPart, getDataset, recordActivity } from "@/lib/repository";
+import { createPart, getInventory, recordActivity } from "@/lib/repository";
 import { partSchema } from "@/lib/validation";
 
 export async function GET() {
@@ -10,8 +10,8 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
-  return NextResponse.json(dataset.partStock);
+  const { partStock } = await getInventory();
+  return NextResponse.json(partStock);
 }
 
 export async function POST(request: Request) {

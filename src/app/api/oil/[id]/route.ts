@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { getDataset, recordActivity, updateOilChange } from "@/lib/repository";
+import { getOilChange, recordActivity, updateOilChange } from "@/lib/repository";
 import { oilSchema } from "@/lib/validation";
 
 export async function PUT(
@@ -15,7 +15,7 @@ export async function PUT(
 
   try {
     const { id } = await context.params;
-    const before = (await getDataset()).oilChanges.find((item) => item.id === id);
+    const before = await getOilChange(id);
     const payload = oilSchema.parse(await request.json());
     const saved = await updateOilChange(id, payload);
     await recordActivity({

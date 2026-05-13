@@ -26,7 +26,7 @@ import { Section } from "@/components/page";
 import { currency, date, number, percent } from "@/lib/format";
 import type { DashboardData } from "@/lib/types";
 
-const refreshIntervalMs = 60_000;
+const refreshIntervalMs = 30_000;
 
 function nextMidnightDelay() {
   const now = new Date();
@@ -118,6 +118,58 @@ function alertLabel(status: "critical" | "attention" | "normal") {
   };
 
   return labels[status];
+}
+
+function typeBadgeClass(type: string) {
+  const classes: Record<string, string> = {
+    INFO: "bg-sky-400/12 text-sky-200 border-sky-400/20",
+    WARNING: "bg-amber-400/12 text-amber-200 border-amber-400/20",
+    DANGER: "bg-rose-400/12 text-rose-200 border-rose-400/20",
+    SUCCESS: "bg-emerald-400/12 text-emerald-200 border-emerald-400/20",
+  };
+  return classes[type] || classes.INFO;
+}
+
+function DashboardNotifications({ notifications }: { notifications: any[] }) {
+  const active = notifications.filter((n) => n.status !== "RESOLVED").slice(0, 6);
+
+  if (!active.length) {
+    return (
+      <div className="rounded-[8px] border border-white/5 bg-white/[0.02] px-4 py-8 text-center">
+        <p className="text-xs text-zinc-500">Sem atividades recentes pendentes.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {active.map((notification) => (
+        <Link
+          className="block rounded-[8px] border border-white/8 bg-white/[0.03] p-3 transition hover:bg-white/[0.05]"
+          href={notification.link || "/dashboard"}
+          key={notification.id}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white truncate">{notification.title}</p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${typeBadgeClass(notification.type)}`}>
+                  {notification.status === "UNREAD" ? "Nova" : "Lida"}
+                </span>
+                <span className="text-[10px] text-zinc-500">{date(notification.createdAt)}</span>
+              </div>
+            </div>
+            {notification.status === "UNREAD" && (
+              <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-teal-400 mt-1.5 shadow-[0_0_8px_rgba(45,212,191,0.6)]" />
+            )}
+          </div>
+          <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-zinc-400">
+            {notification.message}
+          </p>
+        </Link>
+      ))}
+    </div>
+  );
 }
 
 function FinancialIndicator({ data }: { data: DashboardData }) {
@@ -228,53 +280,33 @@ export function DashboardRealtime({ initialData }: { initialData: DashboardData 
   const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
-    setRefreshing(true);
+    setRefreshing((isRefreshing) => {
+      if (isRefreshing) return true;
 
-    try {
-      const response = await fetch("/api/dashboard", { cache: "no-store" });
+      (async () => {
+        try {
+          const response = await fetch("/api/dashboard", { cache: "no-store" });
+          if (response.ok) {
+            setData(await response.json());
+            setLastUpdatedAt(new Date());
+          }
+        } catch (err) {
+          console.error("Dashboard refresh error:", err);
+        } finally {
+          setRefreshing(false);
+        }
+      })();
 
-      if (response.ok) {
-        setData(await response.json());
-        setLastUpdatedAt(new Date());
-      }
-    } finally {
-      setRefreshing(false);
-    }
+      return true;
+    });
   }, []);
 
   useEffect(() => {
-    const interval = window.setInterval(refresh, refreshIntervalMs);
+    const interval = window.setInterval(() => {
+      refresh();
+    }, refreshIntervalMs);
+
     return () => window.clearInterval(interval);
-  }, [refresh]);
-
-  useEffect(() => {
-    let timeout = 0;
-
-    function schedule() {
-      timeout = window.setTimeout(async () => {
-        await refresh();
-        schedule();
-      }, nextMidnightDelay());
-    }
-
-    schedule();
-    return () => window.clearTimeout(timeout);
-  }, [refresh]);
-
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        refresh();
-      }
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("focus", refresh);
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", refresh);
-    };
   }, [refresh]);
 
   const updatedAt = useMemo(() => formatUpdatedAt(lastUpdatedAt), [lastUpdatedAt]);
@@ -511,25 +543,16 @@ export function DashboardRealtime({ initialData }: { initialData: DashboardData 
 
           <Section>
             <div className="mb-4 flex items-center gap-2">
-              <Package size={18} className="text-sky-200" />
+              <RefreshCw size={18} className="text-sky-200" />
               <h2 className="text-sm font-semibold text-white">Notificacoes recentes</h2>
             </div>
-            <div className="space-y-3">
-              {data.notifications.map((notification) => (
-                <div
-                  className="rounded-[8px] border border-white/8 bg-white/[0.03] p-3"
-                  key={notification.id}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-white">{notification.title}</p>
-                    <span className="text-xs text-zinc-500">
-                      {notification.read ? "lida" : "nova"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-zinc-500">{notification.message}</p>
-                </div>
-              ))}
-            </div>
+            <DashboardNotifications notifications={data.notifications} />
+            <Link
+              className="mt-4 flex h-9 items-center justify-center rounded-[8px] border border-white/10 text-xs font-bold text-zinc-400 transition hover:bg-white/5 hover:text-white"
+              href="/logs?tab=notifications"
+            >
+              Historico Completo
+            </Link>
           </Section>
 
           <Section>

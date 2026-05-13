@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { getDataset, recordActivity, updateFinancialEntry } from "@/lib/repository";
+import { getFinancialEntry, recordActivity, updateFinancialEntry } from "@/lib/repository";
 import { financialSchema } from "@/lib/validation";
 
 export async function PUT(
@@ -15,7 +15,7 @@ export async function PUT(
 
   try {
     const { id } = await context.params;
-    const before = (await getDataset()).financialEntries.find((item) => item.id === id);
+    const before = await getFinancialEntry(id);
     const payload = financialSchema.parse(await request.json());
     const saved = await updateFinancialEntry(id, payload);
     await recordActivity({

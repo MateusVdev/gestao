@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { requireSession } from "@/lib/api";
-import { getDataset } from "@/lib/repository";
+import { getInventory, getStockMovements } from "@/lib/repository";
 
 export async function GET() {
   const { response } = await requireSession();
@@ -10,13 +10,16 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
+  const [{ partStock }, movements] = await Promise.all([
+    getInventory(),
+    getStockMovements(),
+  ]);
   const workbook = XLSX.utils.book_new();
 
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(dataset.partStock), "Estoque");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(partStock), "Estoque");
   XLSX.utils.book_append_sheet(
     workbook,
-    XLSX.utils.json_to_sheet(dataset.stockMovements),
+    XLSX.utils.json_to_sheet(movements),
     "Movimentacoes",
   );
 

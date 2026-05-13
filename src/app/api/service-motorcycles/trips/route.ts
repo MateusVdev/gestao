@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { createMotorcycleTrip, getDataset, recordActivity } from "@/lib/repository";
+import { createMotorcycleTrip, getMotorcycleTrips, recordActivity } from "@/lib/repository";
 import { motorcycleTripSchema } from "@/lib/validation";
 
 export async function GET() {
@@ -10,8 +10,8 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
-  return NextResponse.json(dataset.motorcycleTrips);
+  const trips = await getMotorcycleTrips();
+  return NextResponse.json(trips);
 }
 
 export async function POST(request: Request) {

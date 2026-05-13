@@ -3,7 +3,14 @@ import { Download, FileSpreadsheet, FileText, Filter } from "lucide-react";
 import { ReportCharts } from "@/components/charts";
 import { PageHeader, Section } from "@/components/page";
 import { currency, date } from "@/lib/format";
-import { getDataset, getReport } from "@/lib/repository";
+import {
+  getInventory,
+  getMaintenances,
+  getReport,
+  getSettings,
+  getStockMovements,
+  getVehicles,
+} from "@/lib/repository";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -27,7 +34,14 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 
 export default async function ReportsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  const dataset = await getDataset();
+  const [settings, vehicles, inventory, stockMovements, maintenances] = await Promise.all([
+    getSettings(),
+    getVehicles(),
+    getInventory(),
+    getStockMovements(),
+    getMaintenances(),
+  ]);
+
   const vehicleId = getParam(params, "vehicleId") ?? "";
   const from = getParam(params, "from") ?? "2026-01-01";
   const to = getParam(params, "to") ?? "2026-05-31";
@@ -45,30 +59,30 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
     to,
     annual: period === "annual",
   });
-  const stockMovementsInRange = dataset.stockMovements.filter((movement) =>
+  const stockMovementsInRange = stockMovements.filter((movement) =>
     (!from || movement.date >= from) && (!to || movement.date <= to),
   );
-  const mostExpensiveParts = dataset.partStock
+  const mostExpensiveParts = inventory.partStock
     .toSorted((first, second) => second.unitCost - first.unitCost)
     .slice(0, 5);
-  const averagePartCost = dataset.partStock.length
-    ? dataset.partStock.reduce((total, part) => total + part.unitCost, 0) / dataset.partStock.length
+  const averagePartCost = inventory.partStock.length
+    ? inventory.partStock.reduce((total, part) => total + part.unitCost, 0) / inventory.partStock.length
     : 0;
-  const fleetCostByKm = dataset.vehicles
+  const fleetCostByKm = vehicles
     .map((vehicle) => {
       const expense = report.entries
         .filter((entry) => entry.vehicleId === vehicle.id && entry.kind === "EXPENSE")
         .reduce((total, entry) => total + entry.value, 0);
       return {
         name: vehicle.name,
-        maintenanceCount: dataset.maintenances.filter((item) => item.vehicleId === vehicle.id).length,
+        maintenanceCount: maintenances.filter((item) => item.vehicleId === vehicle.id).length,
         costPerKm: vehicle.mileage ? expense / vehicle.mileage : 0,
         expense,
       };
     })
     .toSorted((first, second) => second.expense - first.expense)
     .slice(0, 6);
-  const money = (value: number) => currency(value, dataset.companySettings.currency);
+  const money = (value: number) => currency(value, settings.currency);
 
   return (
     <>
@@ -103,7 +117,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
             </span>
             <select className="h-11 w-full px-3 text-sm" name="vehicleId" defaultValue={vehicleId}>
               <option value="">Todos os veículos</option>
-              {dataset.vehicles.map((vehicle) => (
+              {vehicles.map((vehicle) => (
                 <option key={vehicle.id} value={vehicle.id}>
                   {vehicle.name}
                 </option>
@@ -146,6 +160,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Sear
         <SummaryCard label="Combustível" value={money(report.totals.fuel)} />
         <SummaryCard label="Óleo" value={money(report.totals.oil)} />
       </div>
+...
 
       <ReportCharts report={report} />
 

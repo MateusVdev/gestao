@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { currency } from "@/lib/format";
-import { getDataset } from "@/lib/repository";
+import { getSettings } from "@/lib/repository";
 import { LoginForm } from "@/app/login/login-form";
 
 function initials(value: string) {
@@ -22,7 +22,7 @@ export default async function LoginPage() {
     redirect("/dashboard");
   }
 
-  const settings = (await getDataset()).companySettings;
+  const settings = await getSettings();
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-8">

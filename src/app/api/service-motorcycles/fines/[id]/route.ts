@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
 import {
-  getDataset,
+  getMotorcycleFine,
   recordActivity,
   updateMotorcycleFinePayment,
 } from "@/lib/repository";
@@ -19,7 +19,7 @@ export async function PUT(
 
   try {
     const { id } = await context.params;
-    const before = (await getDataset()).motorcycleFines.find((fine) => fine.id === id);
+    const before = await getMotorcycleFine(id);
     const payload = motorcycleFinePaymentSchema.parse(await request.json());
     const saved = await updateMotorcycleFinePayment(id, payload, user.name);
 

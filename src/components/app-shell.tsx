@@ -69,6 +69,26 @@ function typeClass(type: AppNotification["type"]) {
   return classes[type];
 }
 
+function priorityLabel(priority: AppNotification["priority"]) {
+  const labels: Record<AppNotification["priority"], string> = {
+    LOW: "Baixa",
+    MEDIUM: "Media",
+    HIGH: "Alta",
+    CRITICAL: "Critica",
+  };
+  return labels[priority];
+}
+
+function priorityClass(priority: AppNotification["priority"]) {
+  const classes: Record<AppNotification["priority"], string> = {
+    LOW: "text-emerald-400",
+    MEDIUM: "text-sky-400",
+    HIGH: "text-amber-400",
+    CRITICAL: "text-rose-400",
+  };
+  return classes[priority];
+}
+
 function toastIcon(type: AppNotification["type"]) {
   const icons = {
     INFO: Info,
@@ -157,9 +177,14 @@ function AppShellFrame({
   const [toasts, setToasts] = useState<AppNotification[]>([]);
   const knownNotificationIds = useRef(new Set(initialNotifications.map((item) => item.id)));
 
-  const unread = useMemo(
-    () => notifications.filter((notification) => !notification.read).length,
+  const activeNotifications = useMemo(
+    () => notifications.filter((n) => n.status !== "RESOLVED"),
     [notifications],
+  );
+
+  const unread = useMemo(
+    () => activeNotifications.filter((notification) => notification.status === "UNREAD").length,
+    [activeNotifications],
   );
 
   useEffect(() => {
@@ -186,23 +211,31 @@ function AppShellFrame({
   }, [searchValue]);
 
   useEffect(() => {
+    let fetching = false;
     const interval = window.setInterval(async () => {
-      const response = await fetch("/api/notifications", { cache: "no-store" }).catch(() => null);
-      if (!response?.ok) {
-        return;
-      }
+      if (fetching) return;
+      fetching = true;
 
-      const nextNotifications = (await response.json()) as AppNotification[];
-      const fresh = nextNotifications.filter(
-        (notification) => !knownNotificationIds.current.has(notification.id) && !notification.read,
-      );
+      try {
+        const response = await fetch("/api/notifications", { cache: "no-store" }).catch(() => null);
+        if (!response?.ok) {
+          return;
+        }
 
-      nextNotifications.forEach((notification) => knownNotificationIds.current.add(notification.id));
-      if (fresh.length) {
-        setToasts((items) => [...fresh.slice(0, 3), ...items].slice(0, 4));
+        const nextNotifications = (await response.json()) as AppNotification[];
+        const fresh = nextNotifications.filter(
+          (notification) => !knownNotificationIds.current.has(notification.id) && notification.status === "UNREAD",
+        );
+
+        nextNotifications.forEach((notification) => knownNotificationIds.current.add(notification.id));
+        if (fresh.length) {
+          setToasts((items) => [...fresh.slice(0, 3), ...items].slice(0, 4));
+        }
+        setNotifications(nextNotifications);
+      } finally {
+        fetching = false;
       }
-      setNotifications(nextNotifications);
-    }, 30_000);
+    }, 60_000);
 
     return () => window.clearInterval(interval);
   }, []);
@@ -225,13 +258,20 @@ function AppShellFrame({
     router.refresh();
   }
 
-  async function markRead(id: string) {
-    setNotifications((items) =>
-      items.map((notification) =>
-        notification.id === id ? { ...notification, read: true } : notification,
-      ),
-    );
-    await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
+  async function markRead(notification: AppNotification) {
+    if (notification.status === "UNREAD") {
+      setNotifications((items) =>
+        items.map((n) =>
+          n.id === notification.id ? { ...n, status: "READ" as const } : n,
+        ),
+      );
+      await fetch(`/api/notifications/${notification.id}/read`, { method: "PATCH" });
+    }
+
+    if (notification.link) {
+      router.push(notification.link);
+      setNotificationsOpen(false);
+    }
   }
 
   const sidebar = (
@@ -380,9 +420,12 @@ function AppShellFrame({
                 </button>
 
                 {notificationsOpen ? (
-                  <div className="absolute top-12 right-0 w-[min(380px,calc(100vw-2rem))] overflow-hidden rounded-[8px] border border-white/10 bg-[#111614] shadow-2xl">
+                  <div className="absolute top-12 right-0 w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-[8px] border border-white/10 bg-[#111614] shadow-2xl">
                     <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                      <p className="text-sm font-semibold text-white">Notificações</p>
+                      <div>
+                        <p className="text-sm font-semibold text-white">Notificações</p>
+                        <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-bold">Alertas Operacionais</p>
+                      </div>
                       <button
                         className="grid h-8 w-8 place-items-center rounded-[8px] text-zinc-500 transition hover:bg-white/7 hover:text-white"
                         onClick={() => setNotificationsOpen(false)}
@@ -392,32 +435,56 @@ function AppShellFrame({
                         <X size={16} />
                       </button>
                     </div>
-                    <div className="max-h-[420px] overflow-auto">
-                      {notifications.slice(0, 6).map((notification) => (
-                        <button
-                          className="block w-full border-b border-white/6 px-4 py-3 text-left transition last:border-0 hover:bg-white/[0.04]"
-                          key={notification.id}
-                          onClick={() => markRead(notification.id)}
-                          type="button"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-sm font-medium text-white">
-                              {notification.title}
-                            </span>
-                            <span
-                              className={cn(
-                                "rounded-full px-2 py-1 text-[11px]",
-                                typeClass(notification.type),
-                              )}
-                            >
-                              {notification.read ? "Lida" : "Nova"}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs leading-5 text-zinc-500">
-                            {notification.message}
-                          </p>
-                        </button>
-                      ))}
+                    <div className="max-h-[480px] overflow-auto">
+                      {activeNotifications.length ? (
+                        activeNotifications.slice(0, 10).map((notification) => (
+                          <button
+                            className="block w-full border-b border-white/6 px-4 py-4 text-left transition last:border-0 hover:bg-white/[0.04]"
+                            key={notification.id}
+                            onClick={() => markRead(notification)}
+                            type="button"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <span className="text-sm font-bold text-white">
+                                  {notification.title}
+                                </span>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <span
+                                    className={cn(
+                                      "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                                      typeClass(notification.type),
+                                    )}
+                                  >
+                                    {notification.status === "READ" ? "Lida" : "Nova"}
+                                  </span>
+                                  <span className={cn("text-[10px] font-bold uppercase", priorityClass(notification.priority))}>
+                                    • Prioridade {priorityLabel(notification.priority)}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="shrink-0 h-2 w-2 rounded-full bg-teal-400 animate-pulse" style={{ opacity: notification.status === "UNREAD" ? 1 : 0 }} />
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-zinc-400 line-clamp-2">
+                              {notification.message}
+                            </p>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-4 py-12 text-center">
+                          <Bell className="mx-auto text-zinc-700 mb-3" size={32} />
+                          <p className="text-sm text-zinc-500">Nenhuma notificacao pendente.</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="border-t border-white/10 bg-white/[0.02] p-2">
+                       <Link 
+                        href="/logs" 
+                        className="flex h-9 w-full items-center justify-center rounded-[6px] text-xs font-bold text-zinc-400 transition hover:bg-white/5 hover:text-white"
+                        onClick={() => setNotificationsOpen(false)}
+                       >
+                         Ver Historico de Atividades
+                       </Link>
                     </div>
                   </div>
                 ) : null}

@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api";
 import { currency } from "@/lib/format";
 import { createLinesPdf } from "@/lib/pdf";
-import { getDataset } from "@/lib/repository";
+import {
+  getMotorcycleFines,
+  getMotorcycleTrips,
+  getServiceMotorcycles,
+  getSettings,
+} from "@/lib/repository";
 
 export async function GET() {
   const { response } = await requireSession();
@@ -11,23 +16,29 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
-  const money = (value: number) => currency(value, dataset.companySettings.currency);
-  const fineTotal = dataset.motorcycleFines.reduce((sum, fine) => sum + fine.value, 0);
+  const [settings, motorcycles, trips, fines] = await Promise.all([
+    getSettings(),
+    getServiceMotorcycles(),
+    getMotorcycleTrips(),
+    getMotorcycleFines(),
+  ]);
+
+  const money = (value: number) => currency(value, settings.currency);
+  const fineTotal = fines.reduce((sum, fine) => sum + fine.value, 0);
   const lines = [
-    `Relatorio de motos de servico ${dataset.companySettings.cooperativeName}`,
-    `Motos cadastradas: ${dataset.serviceMotorcycles.length}`,
-    `Saidas registradas: ${dataset.motorcycleTrips.length}`,
-    `Multas: ${dataset.motorcycleFines.length}`,
+    `Relatorio de motos de servico ${settings.cooperativeName}`,
+    `Motos cadastradas: ${motorcycles.length}`,
+    `Saidas registradas: ${trips.length}`,
+    `Multas: ${fines.length}`,
     `Custo de multas: ${money(fineTotal)}`,
     "",
     "Motos",
-    ...dataset.serviceMotorcycles
+    ...motorcycles
       .slice(0, 20)
       .map((motorcycle) => `${motorcycle.brand} ${motorcycle.model} - ${motorcycle.plate}`),
     "",
     "Multas",
-    ...dataset.motorcycleFines
+    ...fines
       .slice(0, 15)
       .map((fine) => `${fine.motorcycleName} - ${money(fine.value)} - ${fine.reason}`),
   ];

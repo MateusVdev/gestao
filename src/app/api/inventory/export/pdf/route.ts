@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api";
 import { currency } from "@/lib/format";
 import { createLinesPdf } from "@/lib/pdf";
-import { getDataset } from "@/lib/repository";
+import { getInventory, getSettings, getStockMovements } from "@/lib/repository";
 
 export async function GET() {
   const { response } = await requireSession();
@@ -11,17 +11,22 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
-  const money = (value: number) => currency(value, dataset.companySettings.currency);
-  const total = dataset.partStock.reduce((sum, part) => sum + part.quantity * part.unitCost, 0);
+  const [inventory, settings, movements] = await Promise.all([
+    getInventory(),
+    getSettings(),
+    getStockMovements(),
+  ]);
+
+  const money = (value: number) => currency(value, settings.currency);
+  const total = inventory.partStock.reduce((sum, part) => sum + part.quantity * part.unitCost, 0);
   const lines = [
-    `Relatorio de estoque ${dataset.companySettings.cooperativeName}`,
+    `Relatorio de estoque ${settings.cooperativeName}`,
     `Valor total em estoque: ${money(total)}`,
-    `Pecas cadastradas: ${dataset.partStock.length}`,
-    `Movimentacoes: ${dataset.stockMovements.length}`,
+    `Pecas cadastradas: ${inventory.partStock.length}`,
+    `Movimentacoes: ${movements.length}`,
     "",
     "Itens principais",
-    ...dataset.partStock
+    ...inventory.partStock
       .slice(0, 30)
       .map((part) => `${part.name} - ${part.quantity} un. - ${money(part.unitCost)}`),
   ];

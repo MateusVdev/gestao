@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { getDataset } from "@/lib/repository";
+import { getSettings } from "@/lib/repository";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const settings = (await getDataset()).companySettings;
+  const settings = await getSettings();
 
   return {
     title: `${settings.cooperativeName} | Gestao de Cooperativa de Veiculos`,
@@ -17,7 +17,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const settings = (await getDataset()).companySettings;
+  const settings = await getSettings();
 
   return (
     <html data-currency={settings.currency} data-theme={settings.theme} lang="pt-BR" suppressHydrationWarning>

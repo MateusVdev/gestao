@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { requireSession } from "@/lib/api";
-import { getDataset } from "@/lib/repository";
+import { getMotorcycleFines, getMotorcycleTrips, getServiceMotorcycles } from "@/lib/repository";
 
 export async function GET() {
   const { response } = await requireSession();
@@ -10,16 +10,20 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
+  const [motorcycles, trips, fines] = await Promise.all([
+    getServiceMotorcycles(),
+    getMotorcycleTrips(),
+    getMotorcycleFines(),
+  ]);
   const workbook = XLSX.utils.book_new();
 
   XLSX.utils.book_append_sheet(
     workbook,
-    XLSX.utils.json_to_sheet(dataset.serviceMotorcycles),
+    XLSX.utils.json_to_sheet(motorcycles),
     "Motos",
   );
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(dataset.motorcycleTrips), "Saidas");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(dataset.motorcycleFines), "Multas");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(trips), "Saidas");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(fines), "Multas");
 
   const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
 

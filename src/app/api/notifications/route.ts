@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/api";
-import { getDataset } from "@/lib/repository";
+import { getNotifications } from "@/lib/repository";
 
 export async function GET() {
   const { response } = await requireSession();
@@ -9,6 +9,6 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
-  return NextResponse.json(dataset.notifications);
+  const notifications = await getNotifications();
+  return NextResponse.json(notifications);
 }

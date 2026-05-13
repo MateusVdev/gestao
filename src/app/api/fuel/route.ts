@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { createFuelLog, getDataset, recordActivity } from "@/lib/repository";
+import { createFuelLog, getFuelLogs, recordActivity } from "@/lib/repository";
 import { fuelSchema } from "@/lib/validation";
 
 export async function GET() {
@@ -10,8 +10,8 @@ export async function GET() {
     return response;
   }
 
-  const dataset = await getDataset();
-  return NextResponse.json(dataset.fuelLogs);
+  const fuelLogs = await getFuelLogs();
+  return NextResponse.json(fuelLogs);
 }
 
 export async function POST(request: Request) {

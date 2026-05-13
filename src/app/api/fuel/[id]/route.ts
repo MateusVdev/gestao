@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleApiError, requestAuditMeta, requireSession } from "@/lib/api";
-import { getDataset, recordActivity, updateFuelLog } from "@/lib/repository";
+import { getFuelLog, recordActivity, updateFuelLog } from "@/lib/repository";
 import { fuelSchema } from "@/lib/validation";
 
 export async function PUT(
@@ -15,7 +15,7 @@ export async function PUT(
 
   try {
     const { id } = await context.params;
-    const before = (await getDataset()).fuelLogs.find((item) => item.id === id);
+    const before = await getFuelLog(id);
     const payload = fuelSchema.parse(await request.json());
     const saved = await updateFuelLog(id, payload);
     await recordActivity({
