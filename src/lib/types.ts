@@ -262,9 +262,9 @@ export type AttachmentOwnerType =
   | "inventory"
   | "vehicle"
   | "motorcycle";
-
 export type Attachment = {
   id: string;
+  publicId?: string | null;
   ownerType: AttachmentOwnerType;
   ownerId: string;
   ownerLabel: string;

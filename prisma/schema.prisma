@@ -358,9 +358,9 @@ model AuditTrail {
   newValue  Json?
   createdAt DateTime @default(now())
 }
-
 model Attachment {
   id                  String             @id @default(cuid())
+  publicId            String?
   ownerType           String
   ownerId             String
   ownerLabel          String

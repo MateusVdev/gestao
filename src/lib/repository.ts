@@ -4,6 +4,8 @@ import { basename, join } from "node:path";
 import type { Prisma } from "@prisma/client";
 import { loadLocalDataset, saveLocalDataset } from "@/lib/local-store";
 import { createDemoDataset } from "@/lib/demo-data";
+import { uploadToCloudinary } from "@/lib/cloudinary";
+import { v2 as cloudinary } from "cloudinary";
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
 import { buildDashboardData, buildReportData } from "@/lib/analytics";
 import { inputDate, normalizeCurrencyCode } from "@/lib/format";
@@ -47,7 +49,7 @@ import type {
 
 const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.NETLIFY);
 const backupDirectory = join(process.cwd(), "data", "backups");
-const uploadDirectory = join(process.cwd(), "data", "uploads");
+
 
 type RequestMeta = {
   ipAddress?: string | null;
@@ -984,6 +986,7 @@ export async function getAttachments(): Promise<Attachment[]> {
       const items = await prisma.attachment.findMany({ orderBy: { createdAt: "desc" } });
       return items.map((attachment) => ({
         id: attachment.id,
+        publicId: attachment.publicId,
         ownerType: attachment.ownerType as AttachmentOwnerType,
         ownerId: attachment.ownerId,
         ownerLabel: attachment.ownerLabel,
@@ -1016,18 +1019,34 @@ export type FileUploadInput = {
   buffer: Buffer;
 };
 
-export async function uploadFile(input: FileUploadInput): Promise<string> {
-  const storedName = `${randomUUID()}-${input.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
+export type UploadResult = {
+  url: string;
+  publicId: string;
+};
 
-  if (IS_SERVERLESS) {
-    return `https://placehold.co/400x400/101413/teal?text=${encodeURIComponent(input.name)}`;
+export async function uploadFile(input: FileUploadInput): Promise<UploadResult> {
+  // Use Cloudinary for all environments (Vercel and Local)
+  // This ensures no more EROFS and consistent behavior.
+  try {
+    const secureUrl = await uploadToCloudinary(input.buffer);
+    
+    // Simple way to get public_id if helper doesn't return it:
+    // Cloudinary secure_url looks like: https://res.cloudinary.com/[cloud_name]/image/upload/v[version]/[folder]/[public_id].[ext]
+    const parts = secureUrl.split('/');
+    const lastPart = parts[parts.length - 1];
+    const fileName = lastPart.split('.')[0];
+    const folder = parts[parts.length - 2];
+    const publicId = `${folder}/${fileName}`;
+
+    return {
+      url: secureUrl,
+      publicId: publicId
+    };
+  } catch (error) {
+    console.error("Upload error:", error);
+    // Strict error handling: no more placeholders in production
+    throw new Error("Falha no upload do arquivo. Verifique a configuração do Cloudinary.");
   }
-
-  mkdirSync(uploadDirectory, { recursive: true });
-  const filePath = join(uploadDirectory, storedName);
-  writeFileSync(filePath, input.buffer);
-
-  return `/api/uploads/${storedName}`;
 }
 
 export async function getActivityLogs(): Promise<ActivityLog[]> {
@@ -1473,6 +1492,7 @@ export async function getDataset(): Promise<Dataset> {
         auditTrail: auditTrail.map(toAuditTrail),
         attachments: attachments.map((attachment) => ({
           id: attachment.id,
+          publicId: attachment.publicId,
           ownerType: attachment.ownerType as AttachmentOwnerType,
           ownerId: attachment.ownerId,
           ownerLabel: attachment.ownerLabel,
@@ -4237,10 +4257,6 @@ export function getBackupFilePath(fileName: string) {
   return join(backupDirectory, basename(fileName));
 }
 
-export function getUploadFilePath(fileName: string) {
-  return join(uploadDirectory, basename(fileName));
-}
-
 function attachmentModuleLabel(ownerType: AttachmentOwnerType) {
   const labels: Record<AttachmentOwnerType, string> = {
     maintenance: "Manutencao",
@@ -4323,10 +4339,16 @@ export async function createAttachmentRecord(input: Omit<Attachment, "id" | "cre
 
   return withDb(
     async () => {
-      const saved = await prisma.attachment.create({ data: attachmentDbData(attachment) });
+      const saved = await prisma.attachment.create({
+        data: {
+          ...attachmentDbData(attachment),
+          publicId: input.publicId,
+        },
+      });
       return {
         ...attachment,
         id: saved.id,
+        publicId: saved.publicId,
         createdAt: saved.createdAt.toISOString(),
       };
     },
@@ -4342,10 +4364,16 @@ export async function deleteAttachment(id: string) {
   return withDb(
     async () => {
       const attachment = await prisma.attachment.delete({ where: { id } });
-      const filePath = getUploadFilePath(attachment.url.split("/").at(-1) ?? "");
-      if (!IS_SERVERLESS && existsSync(filePath)) {
-        unlinkSync(filePath);
+
+      // If it's a Cloudinary file, delete it there too
+      if (attachment.publicId && attachment.publicId !== "placeholder") {
+        try {
+          await cloudinary.uploader.destroy(attachment.publicId);
+        } catch (error) {
+          console.error("Erro ao deletar arquivo no Cloudinary:", error);
+        }
       }
+
       return { id };
     },
     (dataset) => {
@@ -4354,10 +4382,6 @@ export async function deleteAttachment(id: string) {
         throw new Error("Anexo nao encontrado.");
       }
       const [attachment] = dataset.attachments.splice(index, 1);
-      const filePath = getUploadFilePath(attachment.url.split("/").at(-1) ?? "");
-      if (!IS_SERVERLESS && existsSync(filePath)) {
-        unlinkSync(filePath);
-      }
       persistLocalDataset();
       return { id };
     },

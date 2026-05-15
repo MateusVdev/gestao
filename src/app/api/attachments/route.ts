@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       throw new Error("Modulo ou registro invalido para o anexo.");
     }
 
-    const url = await uploadFile({
+    const { url, publicId } = await uploadFile({
       name: file.name,
       type: file.type,
       size: file.size,
@@ -79,6 +79,7 @@ export async function POST(request: Request) {
       fileType: file.type || "application/octet-stream",
       fileSize: file.size,
       url,
+      publicId,
       uploadedBy: user.name,
       description: description || null,
       module: ownerModule || ownerType,
