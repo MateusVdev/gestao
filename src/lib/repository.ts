@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from "node
 import { basename, join } from "node:path";
 import type { Prisma } from "@prisma/client";
 import { loadLocalDataset, saveLocalDataset } from "@/lib/local-store";
+import { createDemoDataset } from "@/lib/demo-data";
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
 import { buildDashboardData, buildReportData } from "@/lib/analytics";
 import { inputDate, normalizeCurrencyCode } from "@/lib/format";
@@ -191,30 +192,60 @@ const globalForDemo = globalThis as unknown as {
   demoDataset?: Dataset;
 };
 
-let demoDataset = globalForDemo.demoDataset ?? loadLocalDataset();
+let demoDataset: Dataset | null = null;
 
-if (process.env.NODE_ENV !== "production") {
-  globalForDemo.demoDataset = demoDataset;
+if (!isDatabaseConfigured()) {
+  if (globalForDemo.demoDataset) {
+    demoDataset = globalForDemo.demoDataset;
+  } else if (IS_SERVERLESS) {
+    demoDataset = createDemoDataset();
+  } else {
+    try {
+      demoDataset = loadLocalDataset();
+    } catch (error) {
+      console.warn("Falha ao carregar dataset local, usando dados iniciais:", error);
+      demoDataset = createDemoDataset();
+    }
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForDemo.demoDataset = demoDataset!;
+  }
 }
 
+/**
+ * Retorna o dataset de demonstração garantindo que ele foi inicializado.
+ * Deve ser usado apenas quando isDatabaseConfigured() for falso.
+ */
 function getDemoDataset(): Dataset {
+  if (!demoDataset) {
+    // Inicialização de emergência se necessário
+    if (!isDatabaseConfigured()) {
+      demoDataset = IS_SERVERLESS ? createDemoDataset() : loadLocalDataset();
+      return demoDataset;
+    }
+    throw new Error("Dataset demo solicitado mas base de dados está configurada.");
+  }
   return demoDataset;
 }
 
-function cloneDemo(): Dataset {
-  return structuredClone(demoDataset);
+function cloneDemo(dataset: Dataset): Dataset {
+  return structuredClone(dataset);
 }
 
-async function withDb<T>(operation: () => Promise<T>, fallback: () => T | Promise<T>) {
-  if (!isDatabaseConfigured()) {
-    return fallback();
+async function withDb<T>(
+  operation: () => Promise<T>,
+  fallback: (dataset: Dataset) => T | Promise<T>,
+): Promise<T> {
+  if (isDatabaseConfigured()) {
+    return operation();
   }
 
-  return operation();
+  return fallback(getDemoDataset());
 }
 
 function persistLocalDataset() {
-  if (!isDatabaseConfigured()) {
+  if (!isDatabaseConfigured() && !IS_SERVERLESS && demoDataset) {
     saveLocalDataset(demoDataset);
   }
 }
@@ -726,11 +757,9 @@ async function ensureAutomaticBackup(dataset: Dataset) {
     return;
   }
 
-  demoDataset.backupRecords.unshift(record);
-  demoDataset.backupRecords = pruneLocalBackups(
-    demoDataset.backupRecords,
-    settings.backupRetentionDays,
-  );
+  const ds = getDemoDataset();
+  ds.backupRecords.unshift(record);
+  ds.backupRecords = pruneLocalBackups(ds.backupRecords, settings.backupRetentionDays);
   persistLocalDataset();
 }
 
@@ -758,7 +787,7 @@ export async function getNotifications(): Promise<AppNotification[]> {
         createdAt: inputDate(notification.createdAt),
       }));
     },
-    () => demoDataset.notifications,
+    (dataset) => dataset.notifications,
   );
 }
 
@@ -782,7 +811,7 @@ export async function getSettings(): Promise<CompanySettings> {
           : null,
       );
     },
-    () => demoDataset.companySettings,
+    (dataset) => dataset.companySettings,
   );
 }
 
@@ -804,7 +833,7 @@ export async function getOilChanges(): Promise<OilChange[]> {
         date: inputDate(oilChange.date),
       }));
     },
-    () => demoDataset.oilChanges,
+    (dataset) => dataset.oilChanges,
   );
 }
 
@@ -827,7 +856,7 @@ export async function getFuelLogs(): Promise<FuelLog[]> {
         date: inputDate(fuel.date),
       }));
     },
-    () => demoDataset.fuelLogs,
+    (dataset) => dataset.fuelLogs,
   );
 }
 
@@ -853,7 +882,7 @@ export async function getFinanceEntries(): Promise<FinancialEntry[]> {
           : null,
       }));
     },
-    () => demoDataset.financialEntries,
+    (dataset) => dataset.financialEntries,
   );
 }
 
@@ -866,7 +895,7 @@ export async function getStockMovements(): Promise<StockMovement[]> {
       });
       return items.map(toStockMovement);
     },
-    () => demoDataset.stockMovements,
+    (dataset) => dataset.stockMovements,
   );
 }
 
@@ -876,7 +905,7 @@ export async function getServiceMotorcycles(): Promise<ServiceMotorcycle[]> {
       const items = await prisma.serviceMotorcycle.findMany({ orderBy: { createdAt: "desc" } });
       return items.map(toServiceMotorcycle);
     },
-    () => demoDataset.serviceMotorcycles,
+    (dataset) => dataset.serviceMotorcycles,
   );
 }
 
@@ -892,7 +921,7 @@ export async function getMotorcycleTrips(): Promise<MotorcycleTrip[]> {
       });
       return items.map(toMotorcycleTrip);
     },
-    () => demoDataset.motorcycleTrips,
+    (dataset) => dataset.motorcycleTrips,
   );
 }
 
@@ -905,7 +934,7 @@ export async function getMotorcycleFines(): Promise<MotorcycleFine[]> {
       });
       return items.map(toMotorcycleFine);
     },
-    () => demoDataset.motorcycleFines,
+    (dataset) => dataset.motorcycleFines,
   );
 }
 
@@ -925,7 +954,7 @@ export async function getBackupRecords(): Promise<BackupRecord[]> {
         message: record.message,
       }));
     },
-    () => demoDataset.backupRecords,
+    (dataset) => dataset.backupRecords,
   );
 }
 
@@ -945,7 +974,7 @@ export async function getDeletedItems(): Promise<DeletedItem[]> {
         permanentlyDeletedAt: item.permanentlyDeletedAt?.toISOString() ?? null,
       }));
     },
-    () => demoDataset.deletedItems,
+    (dataset) => dataset.deletedItems,
   );
 }
 
@@ -976,7 +1005,7 @@ export async function getAttachments(): Promise<Attachment[]> {
         createdAt: attachment.createdAt.toISOString(),
       }));
     },
-    () => demoDataset.attachments,
+    (dataset) => dataset.attachments,
   );
 }
 
@@ -1007,7 +1036,7 @@ export async function getActivityLogs(): Promise<ActivityLog[]> {
       const items = await prisma.activityLog.findMany({ orderBy: { createdAt: "desc" } });
       return items.map(toActivityLog);
     },
-    () => demoDataset.activityLogs,
+    (dataset) => dataset.activityLogs,
   );
 }
 
@@ -1017,7 +1046,7 @@ export async function getAuditTrail(): Promise<AuditTrailEntry[]> {
       const items = await prisma.auditTrail.findMany({ orderBy: { createdAt: "desc" } });
       return items.map(toAuditTrail);
     },
-    () => demoDataset.auditTrail,
+    (dataset) => dataset.auditTrail,
   );
 }
 
@@ -1044,7 +1073,7 @@ export async function getFinancialEntry(id: string): Promise<FinancialEntry | nu
           : null,
       };
     },
-    () => demoDataset.financialEntries.find((e) => e.id === id) ?? null,
+    (dataset) => dataset.financialEntries.find((e) => e.id === id) ?? null,
   );
 }
 
@@ -1068,7 +1097,7 @@ export async function getFuelLog(id: string): Promise<FuelLog | null> {
         date: inputDate(fuel.date),
       };
     },
-    () => demoDataset.fuelLogs.find((f) => f.id === id) ?? null,
+    (dataset) => dataset.fuelLogs.find((f) => f.id === id) ?? null,
   );
 }
 
@@ -1088,7 +1117,7 @@ export async function getPart(id: string): Promise<PartStock | null> {
       if (!part) return null;
       return toPartStock(part as any);
     },
-    () => demoDataset.partStock.find((p) => p.id === id) ?? null,
+    (dataset) => dataset.partStock.find((p) => p.id === id) ?? null,
   );
 }
 
@@ -1111,7 +1140,7 @@ export async function getOilChange(id: string): Promise<OilChange | null> {
         date: inputDate(oil.date),
       };
     },
-    () => demoDataset.oilChanges.find((o) => o.id === id) ?? null,
+    (dataset) => dataset.oilChanges.find((o) => o.id === id) ?? null,
   );
 }
 
@@ -1122,7 +1151,7 @@ export async function getServiceMotorcycle(id: string): Promise<ServiceMotorcycl
       if (!motorcycle) return null;
       return toServiceMotorcycle(motorcycle);
     },
-    () => demoDataset.serviceMotorcycles.find((m) => m.id === id) ?? null,
+    (dataset) => dataset.serviceMotorcycles.find((m) => m.id === id) ?? null,
   );
 }
 
@@ -1140,7 +1169,7 @@ export async function getSupplier(id: string): Promise<Supplier | null> {
         document: supplier.document,
       };
     },
-    () => demoDataset.suppliers.find((s) => s.id === id) ?? null,
+    (dataset) => dataset.suppliers.find((s) => s.id === id) ?? null,
   );
 }
 
@@ -1151,7 +1180,7 @@ export async function getVehicle(id: string): Promise<Vehicle | null> {
       if (!vehicle) return null;
       return toVehicle(vehicle);
     },
-    () => demoDataset.vehicles.find((v) => v.id === id) ?? null,
+    (dataset) => dataset.vehicles.find((v) => v.id === id) ?? null,
   );
 }
 
@@ -1165,7 +1194,7 @@ export async function getMotorcycleFine(id: string): Promise<MotorcycleFine | nu
       if (!fine) return null;
       return toMotorcycleFine(fine as any);
     },
-    () => demoDataset.motorcycleFines.find((f) => f.id === id) ?? null,
+    (dataset) => dataset.motorcycleFines.find((f) => f.id === id) ?? null,
   );
 }
 
@@ -1182,7 +1211,7 @@ export async function getSuppliers(): Promise<Supplier[]> {
         document: supplier.document,
       }));
     },
-    () => demoDataset.suppliers,
+    (dataset) => dataset.suppliers,
   );
 }
 
@@ -1216,9 +1245,9 @@ export async function getInventory() {
         })),
       };
     },
-    () => ({
-      partStock: demoDataset.partStock,
-      suppliers: demoDataset.suppliers,
+    (dataset) => ({
+      partStock: dataset.partStock,
+      suppliers: dataset.suppliers,
     }),
   );
 }
@@ -1256,7 +1285,7 @@ export async function getMaintenances(): Promise<MaintenanceRecord[]> {
         })),
       }));
     },
-    () => demoDataset.maintenances,
+    (dataset) => dataset.maintenances,
   );
 }
 
@@ -1266,7 +1295,7 @@ export async function getVehicles(): Promise<Vehicle[]> {
       const vehicles = await prisma.vehicle.findMany({ orderBy: { createdAt: "desc" } });
       return vehicles.map(toVehicle);
     },
-    () => demoDataset.vehicles,
+    (dataset) => dataset.vehicles,
   );
 }
 
@@ -1675,10 +1704,7 @@ export async function getDashboard(): Promise<DashboardData> {
 
       return dashboardData;
     },
-    async () => {
-      const dataset = demoDataset;
-      return buildDashboardData(dataset);
-    },
+    (dataset) => buildDashboardData(dataset),
   );
 }
 
@@ -1783,7 +1809,7 @@ export async function getReport(options: {
         entries: mappedEntries as any,
       };
     },
-    async () => buildReportData(demoDataset, options),
+    (dataset) => buildReportData(dataset, options),
   );
 }
 
@@ -1863,16 +1889,16 @@ export async function recordActivity(input: ActivityInput) {
 
       return toActivityLog(saved);
     },
-    () => {
-      demoDataset.activityLogs.unshift(log);
-      if (demoDataset.activityLogs.length > 1000) {
-        demoDataset.activityLogs = demoDataset.activityLogs.slice(0, 1000);
+    (dataset) => {
+      dataset.activityLogs.unshift(log);
+      if (dataset.activityLogs.length > 1000) {
+        dataset.activityLogs = dataset.activityLogs.slice(0, 1000);
       }
 
       if (audit) {
-        demoDataset.auditTrail.unshift(audit);
-        if (demoDataset.auditTrail.length > 1000) {
-          demoDataset.auditTrail = demoDataset.auditTrail.slice(0, 1000);
+        dataset.auditTrail.unshift(audit);
+        if (dataset.auditTrail.length > 1000) {
+          dataset.auditTrail = dataset.auditTrail.slice(0, 1000);
         }
       }
       persistLocalDataset();
@@ -1901,14 +1927,14 @@ export async function createVehicle(input: VehicleInput) {
 
       return toVehicle(vehicle);
     },
-    () => {
+    (dataset) => {
       const vehicle: Vehicle = {
         id: randomUUID(),
         ...input,
         plate: input.plate.toUpperCase(),
         exitDate: normalizeVehicleExitDate(input),
       };
-      demoDataset.vehicles.unshift(vehicle);
+      dataset.vehicles.unshift(vehicle);
       persistLocalDataset();
       return vehicle;
     },
@@ -1949,8 +1975,8 @@ export async function updateVehicle(id: string, input: VehicleInput) {
 
       return toVehicle(vehicle);
     },
-    () => {
-      const current = demoDataset.vehicles.find((vehicle) => vehicle.id === id);
+    (dataset) => {
+      const current = dataset.vehicles.find((vehicle) => vehicle.id === id);
 
       if (!current) {
         throw new Error("Veículo não encontrado.");
@@ -1975,28 +2001,28 @@ export async function updateVehicle(id: string, input: VehicleInput) {
         }).catch(() => null);
       }
 
-      demoDataset.maintenances.forEach((maintenance) => {
+      dataset.maintenances.forEach((maintenance) => {
         if (maintenance.vehicleId === id) {
           maintenance.vehicleName = vehicle.name;
         }
       });
-      demoDataset.oilChanges.forEach((oilChange) => {
+      dataset.oilChanges.forEach((oilChange) => {
         if (oilChange.vehicleId === id) {
           oilChange.vehicleName = vehicle.name;
         }
       });
-      demoDataset.fuelLogs.forEach((fuel) => {
+      dataset.fuelLogs.forEach((fuel) => {
         if (fuel.vehicleId === id) {
           fuel.vehicleName = vehicle.name;
         }
       });
-      demoDataset.financialEntries.forEach((entry) => {
+      dataset.financialEntries.forEach((entry) => {
         if (entry.vehicleId === id) {
           entry.vehicleName = vehicle.name;
         }
       });
 
-      const updated = replaceItem(demoDataset.vehicles, id, vehicle);
+      const updated = replaceItem(dataset.vehicles, id, vehicle);
       persistLocalDataset();
       return updated;
     },
@@ -2013,8 +2039,8 @@ export async function updateMaintenanceStatus(id: string, status: MaintenanceSta
 
       return { id, status: maintenance.status as MaintenanceStatus };
     },
-    () => {
-      const maintenance = demoDataset.maintenances.find((m) => m.id === id);
+    (dataset) => {
+      const maintenance = dataset.maintenances.find((m) => m.id === id);
       if (maintenance) {
         maintenance.status = status;
       }
@@ -2063,15 +2089,15 @@ export async function concludeMaintenance(id: string, userName: string) {
         concludedBy: userName,
       };
     },
-    () => {
-      const maintenance = demoDataset.maintenances.find((m) => m.id === id);
+    (dataset) => {
+      const maintenance = dataset.maintenances.find((m) => m.id === id);
       if (!maintenance) throw new Error("Manutenção não encontrada.");
 
       maintenance.status = "CONCLUDED";
       maintenance.concludedAt = new Date().toISOString();
       maintenance.concludedBy = userName;
 
-      const vehicle = demoDataset.vehicles.find((v) => v.id === maintenance.vehicleId);
+      const vehicle = dataset.vehicles.find((v) => v.id === maintenance.vehicleId);
       if (vehicle) vehicle.status = "ACTIVE";
 
       persistLocalDataset();
@@ -2207,15 +2233,15 @@ export async function createMaintenance(input: MaintenanceInput) {
         } satisfies MaintenanceRecord;
       });
     },
-    () => {
-      const vehicle = demoDataset.vehicles.find((item) => item.id === input.vehicleId);
+    (dataset) => {
+      const vehicle = dataset.vehicles.find((item) => item.id === input.vehicleId);
 
       if (!vehicle) {
         throw new Error("Veículo não encontrado.");
       }
 
       const parts: MaintenancePart[] = input.parts.map((part) => {
-        const stock = demoDataset.partStock.find((item) => item.id === part.partStockId);
+        const stock = dataset.partStock.find((item) => item.id === part.partStockId);
 
         if (!stock) {
           throw new Error("Selecione uma peca cadastrada no estoque.");
@@ -2255,9 +2281,9 @@ export async function createMaintenance(input: MaintenanceInput) {
       };
 
       vehicle.status = isFinished ? "ACTIVE" : "MAINTENANCE";
-      demoDataset.maintenances.unshift(maintenance);
+      dataset.maintenances.unshift(maintenance);
       parts.forEach((part) => {
-        demoDataset.stockMovements.unshift({
+        dataset.stockMovements.unshift({
           id: randomUUID(),
           partStockId: part.partStockId!,
           partName: part.name,
@@ -2272,7 +2298,7 @@ export async function createMaintenance(input: MaintenanceInput) {
           createdAt: input.date,
         });
       });
-      demoDataset.financialEntries.unshift(
+      dataset.financialEntries.unshift(
         financialEntryForExpense(
           "Manutenção",
           `${input.type} - ${vehicle.name}`,
@@ -2452,23 +2478,23 @@ export async function updateMaintenance(id: string, input: MaintenanceInput) {
         } satisfies MaintenanceRecord;
       });
     },
-    () => {
-      const existing = demoDataset.maintenances.find((maintenance) => maintenance.id === id);
-      const vehicle = demoDataset.vehicles.find((item) => item.id === input.vehicleId);
+    (dataset) => {
+      const existing = dataset.maintenances.find((maintenance) => maintenance.id === id);
+      const vehicle = dataset.vehicles.find((item) => item.id === input.vehicleId);
 
       if (!existing || !vehicle) {
         throw new Error("Registro não encontrado.");
       }
 
       existing.parts.forEach((part) => {
-        const stock = demoDataset.partStock.find((item) => item.id === part.partStockId);
+        const stock = dataset.partStock.find((item) => item.id === part.partStockId);
         if (stock) {
           stock.quantity += part.quantity;
         }
       });
 
       const parts: MaintenancePart[] = input.parts.map((part) => {
-        const stock = demoDataset.partStock.find((item) => item.id === part.partStockId);
+        const stock = dataset.partStock.find((item) => item.id === part.partStockId);
 
         if (!stock) {
           throw new Error("Selecione uma peca cadastrada no estoque.");
@@ -2508,7 +2534,7 @@ export async function updateMaintenance(id: string, input: MaintenanceInput) {
 
       vehicle.status = isFinished ? "ACTIVE" : "MAINTENANCE";
 
-      const linkedEntry = demoDataset.financialEntries.find((entry) =>
+      const linkedEntry = dataset.financialEntries.find((entry) =>
         matchLinkedExpense(entry, {
           category: "Manutenção",
           date: existing.date,
@@ -2524,7 +2550,7 @@ export async function updateMaintenance(id: string, input: MaintenanceInput) {
         linkedEntry.vehicleId = vehicle.id;
         linkedEntry.vehicleName = vehicle.name;
       } else {
-        demoDataset.financialEntries.unshift(
+        dataset.financialEntries.unshift(
           financialEntryForExpense(
             "Manutenção",
             `${input.type} - ${vehicle.name}`,
@@ -2536,7 +2562,7 @@ export async function updateMaintenance(id: string, input: MaintenanceInput) {
       }
 
       parts.forEach((part) => {
-        demoDataset.stockMovements.unshift({
+        dataset.stockMovements.unshift({
           id: randomUUID(),
           partStockId: part.partStockId!,
           partName: part.name,
@@ -2551,7 +2577,7 @@ export async function updateMaintenance(id: string, input: MaintenanceInput) {
           createdAt: input.date,
         });
       });
-      const updated = replaceItem(demoDataset.maintenances, id, next);
+      const updated = replaceItem(dataset.maintenances, id, next);
       persistLocalDataset();
       return updated;
     },
@@ -2601,8 +2627,8 @@ export async function createOilChange(input: OilInput) {
         } satisfies OilChange;
       });
     },
-    () => {
-      const vehicle = demoDataset.vehicles.find((item) => item.id === input.vehicleId);
+    (dataset) => {
+      const vehicle = dataset.vehicles.find((item) => item.id === input.vehicleId);
 
       if (!vehicle) {
         throw new Error("Veículo não encontrado.");
@@ -2620,8 +2646,8 @@ export async function createOilChange(input: OilInput) {
         date: input.date,
       };
 
-      demoDataset.oilChanges.unshift(oilChange);
-      demoDataset.financialEntries.unshift(
+      dataset.oilChanges.unshift(oilChange);
+      dataset.financialEntries.unshift(
         financialEntryForExpense(
           "Óleo",
           `Troca de óleo - ${vehicle.name}`,
@@ -2700,9 +2726,9 @@ export async function updateOilChange(id: string, input: OilInput) {
         } satisfies OilChange;
       });
     },
-    () => {
-      const existing = demoDataset.oilChanges.find((item) => item.id === id);
-      const vehicle = demoDataset.vehicles.find((item) => item.id === input.vehicleId);
+    (dataset) => {
+      const existing = dataset.oilChanges.find((item) => item.id === id);
+      const vehicle = dataset.vehicles.find((item) => item.id === input.vehicleId);
 
       if (!existing || !vehicle) {
         throw new Error("Registro não encontrado.");
@@ -2719,7 +2745,7 @@ export async function updateOilChange(id: string, input: OilInput) {
         totalValue,
         date: input.date,
       };
-      const linkedEntry = demoDataset.financialEntries.find((entry) =>
+      const linkedEntry = dataset.financialEntries.find((entry) =>
         matchLinkedExpense(entry, {
           category: "Óleo",
           date: existing.date,
@@ -2735,7 +2761,7 @@ export async function updateOilChange(id: string, input: OilInput) {
         linkedEntry.vehicleId = vehicle.id;
         linkedEntry.vehicleName = vehicle.name;
       } else {
-        demoDataset.financialEntries.unshift(
+        dataset.financialEntries.unshift(
           financialEntryForExpense(
             "Óleo",
             `Troca de óleo - ${vehicle.name}`,
@@ -2746,7 +2772,7 @@ export async function updateOilChange(id: string, input: OilInput) {
         );
       }
 
-      const updated = replaceItem(demoDataset.oilChanges, id, next);
+      const updated = replaceItem(dataset.oilChanges, id, next);
       persistLocalDataset();
       return updated;
     },
@@ -2798,8 +2824,8 @@ export async function createFuelLog(input: FuelInput) {
         } satisfies FuelLog;
       });
     },
-    () => {
-      const vehicle = demoDataset.vehicles.find((item) => item.id === input.vehicleId);
+    (dataset) => {
+      const vehicle = dataset.vehicles.find((item) => item.id === input.vehicleId);
 
       if (!vehicle) {
         throw new Error("Veículo não encontrado.");
@@ -2818,8 +2844,8 @@ export async function createFuelLog(input: FuelInput) {
         date: input.date,
       };
 
-      demoDataset.fuelLogs.unshift(fuel);
-      demoDataset.financialEntries.unshift(
+      dataset.fuelLogs.unshift(fuel);
+      dataset.financialEntries.unshift(
         financialEntryForExpense(
           "Combustível",
           `Abastecimento - ${vehicle.name}`,
@@ -2900,9 +2926,9 @@ export async function updateFuelLog(id: string, input: FuelInput) {
         } satisfies FuelLog;
       });
     },
-    () => {
-      const existing = demoDataset.fuelLogs.find((item) => item.id === id);
-      const vehicle = demoDataset.vehicles.find((item) => item.id === input.vehicleId);
+    (dataset) => {
+      const existing = dataset.fuelLogs.find((item) => item.id === id);
+      const vehicle = dataset.vehicles.find((item) => item.id === input.vehicleId);
 
       if (!existing || !vehicle) {
         throw new Error("Registro não encontrado.");
@@ -2920,7 +2946,7 @@ export async function updateFuelLog(id: string, input: FuelInput) {
         station: input.station,
         date: input.date,
       };
-      const linkedEntry = demoDataset.financialEntries.find((entry) =>
+      const linkedEntry = dataset.financialEntries.find((entry) =>
         matchLinkedExpense(entry, {
           category: "Combustível",
           date: existing.date,
@@ -2936,7 +2962,7 @@ export async function updateFuelLog(id: string, input: FuelInput) {
         linkedEntry.vehicleId = vehicle.id;
         linkedEntry.vehicleName = vehicle.name;
       } else {
-        demoDataset.financialEntries.unshift(
+        dataset.financialEntries.unshift(
           financialEntryForExpense(
             "Combustível",
             `Abastecimento - ${vehicle.name}`,
@@ -2947,7 +2973,7 @@ export async function updateFuelLog(id: string, input: FuelInput) {
         );
       }
 
-      const updated = replaceItem(demoDataset.fuelLogs, id, next);
+      const updated = replaceItem(dataset.fuelLogs, id, next);
       persistLocalDataset();
       return updated;
     },
@@ -2985,16 +3011,16 @@ export async function createFinancialEntry(input: FinancialInput) {
           : null,
       } satisfies FinancialEntry;
     },
-    () => {
+    (dataset) => {
       const entry: FinancialEntry = {
         id: randomUUID(),
         ...input,
         vehicleId: input.vehicleId || null,
-        vehicleName: getVehicleName(demoDataset, input.vehicleId),
+        vehicleName: getVehicleName(dataset, input.vehicleId),
         serviceMotorcycleId: input.serviceMotorcycleId || null,
-        serviceMotorcycleName: getMotorcycleName(demoDataset, input.serviceMotorcycleId),
+        serviceMotorcycleName: getMotorcycleName(dataset, input.serviceMotorcycleId),
       };
-      demoDataset.financialEntries.unshift(entry);
+      dataset.financialEntries.unshift(entry);
       persistLocalDataset();
       return entry;
     },
@@ -3033,17 +3059,17 @@ export async function updateFinancialEntry(id: string, input: FinancialInput) {
           : null,
       } satisfies FinancialEntry;
     },
-    () => {
+    (dataset) => {
       const entry: FinancialEntry = {
         id,
         ...input,
         vehicleId: input.vehicleId || null,
-        vehicleName: getVehicleName(demoDataset, input.vehicleId),
+        vehicleName: getVehicleName(dataset, input.vehicleId),
         serviceMotorcycleId: input.serviceMotorcycleId || null,
-        serviceMotorcycleName: getMotorcycleName(demoDataset, input.serviceMotorcycleId),
+        serviceMotorcycleName: getMotorcycleName(dataset, input.serviceMotorcycleId),
       };
 
-      const updated = replaceItem(demoDataset.financialEntries, id, entry);
+      const updated = replaceItem(dataset.financialEntries, id, entry);
       persistLocalDataset();
       return updated;
     },
@@ -3056,12 +3082,12 @@ export async function createSupplier(input: SupplierInput) {
       const supplier = await prisma.supplier.create({ data: input });
       return supplier satisfies Supplier;
     },
-    () => {
+    (dataset) => {
       const supplier: Supplier = {
         id: randomUUID(),
         ...input,
       };
-      demoDataset.suppliers.unshift(supplier);
+      dataset.suppliers.unshift(supplier);
       persistLocalDataset();
       return supplier;
     },
@@ -3078,19 +3104,19 @@ export async function updateSupplier(id: string, input: SupplierInput) {
 
       return supplier satisfies Supplier;
     },
-    () => {
+    (dataset) => {
       const supplier: Supplier = {
         id,
         ...input,
       };
 
-      demoDataset.partStock.forEach((part) => {
+      dataset.partStock.forEach((part) => {
         if (part.supplierId === id) {
           part.supplierName = supplier.name;
         }
       });
 
-      const updated = replaceItem(demoDataset.suppliers, id, supplier);
+      const updated = replaceItem(dataset.suppliers, id, supplier);
       persistLocalDataset();
       return updated;
     },
@@ -3150,8 +3176,8 @@ export async function createPart(input: PartInput) {
 
       return toPartStock(part);
     },
-    () => {
-      const supplier = demoDataset.suppliers.find((item) => item.id === input.supplierId);
+    (dataset) => {
+      const supplier = dataset.suppliers.find((item) => item.id === input.supplierId);
       const partId = randomUUID();
       const part: PartStock = {
         id: partId,
@@ -3161,10 +3187,10 @@ export async function createPart(input: PartInput) {
         supplierName: supplier?.name ?? null,
         lastEntryDate: input.quantity > 0 ? input.entryDate : null,
       };
-      demoDataset.partStock.unshift(part);
+      dataset.partStock.unshift(part);
       if (input.quantity > 0) {
         const totalValue = Number((input.quantity * input.unitCost).toFixed(2));
-        demoDataset.stockMovements.unshift({
+        dataset.stockMovements.unshift({
           id: randomUUID(),
           partStockId: partId,
           partName: part.name,
@@ -3181,7 +3207,7 @@ export async function createPart(input: PartInput) {
           notes: input.notes,
           createdAt: input.entryDate,
         });
-        demoDataset.financialEntries.unshift({
+        dataset.financialEntries.unshift({
           id: randomUUID(),
           kind: "EXPENSE",
           category: "Estoque",
@@ -3218,9 +3244,9 @@ export async function updatePart(id: string, input: PartInput) {
 
       return toPartStock(part);
     },
-    () => {
-      const supplier = demoDataset.suppliers.find((item) => item.id === input.supplierId);
-      const existing = demoDataset.partStock.find((item) => item.id === id);
+    (dataset) => {
+      const supplier = dataset.suppliers.find((item) => item.id === input.supplierId);
+      const existing = dataset.partStock.find((item) => item.id === id);
       const part: PartStock = {
         id,
         ...input,
@@ -3230,7 +3256,7 @@ export async function updatePart(id: string, input: PartInput) {
         lastEntryDate: existing?.lastEntryDate ?? null,
       };
 
-      demoDataset.maintenances.forEach((maintenance) => {
+      dataset.maintenances.forEach((maintenance) => {
         maintenance.parts.forEach((maintenancePart) => {
           if (maintenancePart.partStockId === id) {
             maintenancePart.name = part.name;
@@ -3238,7 +3264,7 @@ export async function updatePart(id: string, input: PartInput) {
         });
       });
 
-      const updated = replaceItem(demoDataset.partStock, id, part);
+      const updated = replaceItem(dataset.partStock, id, part);
       persistLocalDataset();
       return updated;
     },
@@ -3272,19 +3298,19 @@ export async function deletePart(id: string, userName = "Administrador") {
       ]);
       return { id };
     },
-    () => {
-      const index = demoDataset.partStock.findIndex((part) => part.id === id);
+    (dataset) => {
+      const index = dataset.partStock.findIndex((part) => part.id === id);
       if (index === -1) {
         throw new Error("Registro nao encontrado.");
       }
 
-      const [part] = demoDataset.partStock.splice(index, 1);
-      demoDataset.deletedItems.unshift({
+      const [part] = dataset.partStock.splice(index, 1);
+      dataset.deletedItems.unshift({
         id: randomUUID(),
         entity: "Estoque",
         entityId: part.id,
         label: part.name,
-        payload: part,
+        payload: part as any,
         deletedBy: userName,
         deletedAt: new Date().toISOString(),
         restoredAt: null,
@@ -3355,14 +3381,14 @@ export async function createStockEntry(input: StockEntryInput) {
         return toStockMovement(movement);
       });
     },
-    () => {
-      const part = demoDataset.partStock.find((item) => item.id === input.partStockId);
+    (dataset) => {
+      const part = dataset.partStock.find((item) => item.id === input.partStockId);
 
       if (!part) {
         throw new Error("Peca nao encontrada.");
       }
 
-      const supplier = demoDataset.suppliers.find(
+      const supplier = dataset.suppliers.find(
         (item) => item.id === (input.supplierId || part.supplierId),
       );
       const totalValue = Number((input.quantity * input.unitCost).toFixed(2));
@@ -3385,7 +3411,7 @@ export async function createStockEntry(input: StockEntryInput) {
       };
 
       if (part.unitCost > 0 && input.unitCost > part.unitCost * 1.05) {
-        demoDataset.notifications.unshift({
+        dataset.notifications.unshift({
           id: randomUUID(),
           title: "Aumento de preco",
           message: `${part.name} teve aumento de fornecedor acima de 5%.`,
@@ -3402,8 +3428,8 @@ export async function createStockEntry(input: StockEntryInput) {
       part.supplierId = input.supplierId || part.supplierId;
       part.supplierName = supplier?.name ?? part.supplierName ?? null;
       part.lastEntryDate = input.date;
-      demoDataset.stockMovements.unshift(movement);
-      demoDataset.financialEntries.unshift({
+      dataset.stockMovements.unshift(movement);
+      dataset.financialEntries.unshift({
         id: randomUUID(),
         kind: "EXPENSE",
         category: "Estoque",
@@ -3411,7 +3437,7 @@ export async function createStockEntry(input: StockEntryInput) {
         value: totalValue,
         date: input.date,
       });
-      demoDataset.activityLogs.unshift({
+      dataset.activityLogs.unshift({
         id: randomUUID(),
         userName: input.responsibleUser,
         action: "CREATE",
@@ -3445,14 +3471,14 @@ export async function createServiceMotorcycle(input: ServiceMotorcycleInput) {
 
       return toServiceMotorcycle(motorcycle);
     },
-    () => {
+    (dataset) => {
       const motorcycle: ServiceMotorcycle = {
         id: randomUUID(),
         ...input,
         plate: input.plate.toUpperCase(),
       };
-      demoDataset.serviceMotorcycles.unshift(motorcycle);
-      demoDataset.activityLogs.unshift({
+      dataset.serviceMotorcycles.unshift(motorcycle);
+      dataset.activityLogs.unshift({
         id: randomUUID(),
         userName: "Administrador",
         action: "CREATE",
@@ -3487,32 +3513,32 @@ export async function updateServiceMotorcycle(id: string, input: ServiceMotorcyc
 
       return toServiceMotorcycle(motorcycle);
     },
-    () => {
+    (dataset) => {
       const motorcycle: ServiceMotorcycle = {
         id,
         ...input,
         plate: input.plate.toUpperCase(),
       };
 
-      demoDataset.motorcycleTrips.forEach((trip) => {
+      dataset.motorcycleTrips.forEach((trip) => {
         if (trip.motorcycleId === id) {
           trip.motorcycleName = `${motorcycle.brand} ${motorcycle.model}`;
           trip.motorcyclePlate = motorcycle.plate;
         }
       });
-      demoDataset.motorcycleFines.forEach((fine) => {
+      dataset.motorcycleFines.forEach((fine) => {
         if (fine.motorcycleId === id) {
           fine.motorcycleName = `${motorcycle.brand} ${motorcycle.model}`;
           fine.motorcyclePlate = motorcycle.plate;
         }
       });
-      demoDataset.financialEntries.forEach((entry) => {
+      dataset.financialEntries.forEach((entry) => {
         if (entry.serviceMotorcycleId === id) {
           entry.serviceMotorcycleName = `${motorcycle.brand} ${motorcycle.model}`;
         }
       });
 
-      const updated = replaceItem(demoDataset.serviceMotorcycles, id, motorcycle);
+      const updated = replaceItem(dataset.serviceMotorcycles, id, motorcycle);
       persistLocalDataset();
       return updated;
     },
@@ -3595,8 +3621,8 @@ export async function createMotorcycleTrip(input: MotorcycleTripInput) {
         return toMotorcycleTrip(saved);
       });
     },
-    () => {
-      const motorcycle = demoDataset.serviceMotorcycles.find(
+    (dataset) => {
+      const motorcycle = dataset.serviceMotorcycles.find(
         (item) => item.id === input.motorcycleId,
       );
 
@@ -3643,11 +3669,11 @@ export async function createMotorcycleTrip(input: MotorcycleTripInput) {
 
       motorcycle.status = input.returnAt ? "GARAGE" : "IN_SERVICE";
       motorcycle.driver = input.driver;
-      demoDataset.motorcycleTrips.unshift(trip);
+      dataset.motorcycleTrips.unshift(trip);
 
       if (fine) {
-        demoDataset.motorcycleFines.unshift(fine);
-        demoDataset.financialEntries.unshift({
+        dataset.motorcycleFines.unshift(fine);
+        dataset.financialEntries.unshift({
           id: randomUUID(),
           kind: "EXPENSE",
           category: "Multas",
@@ -3659,7 +3685,7 @@ export async function createMotorcycleTrip(input: MotorcycleTripInput) {
         });
       }
 
-      demoDataset.activityLogs.unshift({
+      dataset.activityLogs.unshift({
         id: randomUUID(),
         userName: input.driver,
         action: "CREATE",
@@ -3751,8 +3777,8 @@ export async function updateMotorcycleFinePayment(
 
       return toMotorcycleFine(saved);
     },
-    () => {
-      const fine = demoDataset.motorcycleFines.find((item) => item.id === id);
+    (dataset) => {
+      const fine = dataset.motorcycleFines.find((item) => item.id === id);
       if (!fine) {
         throw new Error("Multa nao encontrada.");
       }
@@ -3786,8 +3812,8 @@ export async function updateMotorcycleFinePayment(
         paymentHistory: [...(fine.paymentHistory ?? []), event],
       };
 
-      replaceItem(demoDataset.motorcycleFines, id, next);
-      demoDataset.motorcycleTrips = demoDataset.motorcycleTrips.map((trip) =>
+      replaceItem(dataset.motorcycleFines, id, next);
+      dataset.motorcycleTrips = dataset.motorcycleTrips.map((trip) =>
         trip.fine?.id === id ? { ...trip, fine: next } : trip,
       );
       persistLocalDataset();
@@ -3821,8 +3847,8 @@ export async function markNotificationRead(id: string) {
         createdAt: inputDate(notification.createdAt),
       } satisfies AppNotification;
     },
-    () => {
-      const notification = demoDataset.notifications.find((item) => item.id === id);
+    (dataset) => {
+      const notification = dataset.notifications.find((item) => item.id === id);
       if (notification) {
         notification.status = "READ";
         persistLocalDataset();
@@ -3856,10 +3882,10 @@ export async function updateCompanySettings(input: CompanySettings) {
         sessionTimeoutMinutes: saved.sessionTimeoutMinutes,
       });
     },
-    () => {
-      demoDataset.companySettings = settings;
-      demoDataset.backupRecords = pruneLocalBackups(
-        demoDataset.backupRecords,
+    (dataset) => {
+      dataset.companySettings = settings;
+      dataset.backupRecords = pruneLocalBackups(
+        dataset.backupRecords,
         settings.backupRetentionDays,
       );
       persistLocalDataset();
@@ -3883,8 +3909,7 @@ export async function createBackup(type: BackupRecord["type"], createdBy: string
         createdAt: saved.createdAt.toISOString(),
       };
     },
-    () => {
-      const dataset = getDemoDataset();
+    (dataset) => {
       dataset.backupRecords.unshift(record);
       dataset.backupRecords = pruneLocalBackups(
         dataset.backupRecords,
@@ -4186,9 +4211,10 @@ export async function restoreBackup(payload: unknown, userName: string) {
     globalForDemo.demoDataset = demoDataset;
   }
 
-  const record = writeBackupFile(demoDataset, "RESTORE", userName);
-  demoDataset.backupRecords.unshift(record);
-  demoDataset.activityLogs.unshift({
+  const ds = getDemoDataset();
+  const record = writeBackupFile(ds, "RESTORE", userName);
+  ds.backupRecords.unshift(record);
+  ds.activityLogs.unshift({
     id: randomUUID(),
     userName,
     action: "RESTORE",
@@ -4304,8 +4330,8 @@ export async function createAttachmentRecord(input: Omit<Attachment, "id" | "cre
         createdAt: saved.createdAt.toISOString(),
       };
     },
-    () => {
-      demoDataset.attachments.unshift(attachment);
+    (dataset) => {
+      dataset.attachments.unshift(attachment);
       persistLocalDataset();
       return attachment;
     },
@@ -4322,12 +4348,12 @@ export async function deleteAttachment(id: string) {
       }
       return { id };
     },
-    () => {
-      const index = demoDataset.attachments.findIndex((attachment) => attachment.id === id);
+    (dataset) => {
+      const index = dataset.attachments.findIndex((attachment) => attachment.id === id);
       if (index === -1) {
         throw new Error("Anexo nao encontrado.");
       }
-      const [attachment] = demoDataset.attachments.splice(index, 1);
+      const [attachment] = dataset.attachments.splice(index, 1);
       const filePath = getUploadFilePath(attachment.url.split("/").at(-1) ?? "");
       if (!IS_SERVERLESS && existsSync(filePath)) {
         unlinkSync(filePath);
@@ -4354,21 +4380,21 @@ export async function restoreDeletedItem(id: string, userName: string) {
       });
       return { id, restored: true };
     },
-    () => {
-      const item = demoDataset.deletedItems.find((deleted) => deleted.id === id);
+    (dataset) => {
+      const item = dataset.deletedItems.find((deleted) => deleted.id === id);
       if (!item) {
         throw new Error("Item removido nao encontrado.");
       }
 
       if (item.entity === "Estoque") {
         const part = item.payload as PartStock;
-        if (!demoDataset.partStock.some((current) => current.id === part.id)) {
-          demoDataset.partStock.unshift(part);
+        if (!dataset.partStock.some((current) => current.id === part.id)) {
+          dataset.partStock.unshift(part);
         }
       }
 
-      demoDataset.deletedItems = demoDataset.deletedItems.filter((deleted) => deleted.id !== id);
-      demoDataset.activityLogs.unshift({
+      dataset.deletedItems = dataset.deletedItems.filter((deleted) => deleted.id !== id);
+      dataset.activityLogs.unshift({
         id: randomUUID(),
         userName,
         action: "RESTORE",
@@ -4397,8 +4423,8 @@ export async function permanentlyDeleteItem(id: string) {
       });
       return { id };
     },
-    () => {
-      demoDataset.deletedItems = demoDataset.deletedItems.filter((deleted) => deleted.id !== id);
+    (dataset) => {
+      dataset.deletedItems = dataset.deletedItems.filter((deleted) => deleted.id !== id);
       persistLocalDataset();
       return { id };
     },
@@ -4510,8 +4536,7 @@ export async function search(query: string) {
         })),
       ].slice(0, 8);
     },
-    async () => {
-      const dataset = demoDataset;
+    async (dataset) => {
       return [
         ...dataset.vehicles
           .filter((vehicle) =>
