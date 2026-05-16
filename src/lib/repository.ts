@@ -4,8 +4,7 @@ import { basename, join } from "node:path";
 import type { Prisma } from "@prisma/client";
 import { loadLocalDataset, saveLocalDataset } from "@/lib/local-store";
 import { createDemoDataset } from "@/lib/demo-data";
-import { uploadToCloudinary } from "@/lib/cloudinary";
-import { v2 as cloudinary } from "cloudinary";
+import { uploadToCloudinary, deleteFromCloudinary } from "@/lib/cloudinary";
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
 import { buildDashboardData, buildReportData } from "@/lib/analytics";
 import { inputDate, normalizeCurrencyCode } from "@/lib/format";
@@ -986,7 +985,7 @@ export async function getAttachments(): Promise<Attachment[]> {
       const items = await prisma.attachment.findMany({ orderBy: { createdAt: "desc" } });
       return items.map((attachment) => ({
         id: attachment.id,
-        publicId: attachment.publicId,
+        publicId: attachment.publicId || null,
         ownerType: attachment.ownerType as AttachmentOwnerType,
         ownerId: attachment.ownerId,
         ownerLabel: attachment.ownerLabel,
@@ -1028,22 +1027,14 @@ export async function uploadFile(input: FileUploadInput): Promise<UploadResult> 
   // Use Cloudinary for all environments (Vercel and Local)
   // This ensures no more EROFS and consistent behavior.
   try {
-    const secureUrl = await uploadToCloudinary(input.buffer);
+    const result = await uploadToCloudinary(input.buffer);
     
-    // Simple way to get public_id if helper doesn't return it:
-    // Cloudinary secure_url looks like: https://res.cloudinary.com/[cloud_name]/image/upload/v[version]/[folder]/[public_id].[ext]
-    const parts = secureUrl.split('/');
-    const lastPart = parts[parts.length - 1];
-    const fileName = lastPart.split('.')[0];
-    const folder = parts[parts.length - 2];
-    const publicId = `${folder}/${fileName}`;
-
     return {
-      url: secureUrl,
-      publicId: publicId
+      url: String(result.secure_url),
+      publicId: String(result.public_id)
     };
   } catch (error) {
-    console.error("Upload error:", error);
+    console.error("Upload error:", error instanceof Error ? error.message : "Unknown error");
     // Strict error handling: no more placeholders in production
     throw new Error("Falha no upload do arquivo. Verifique a configuração do Cloudinary.");
   }
@@ -1492,7 +1483,7 @@ export async function getDataset(): Promise<Dataset> {
         auditTrail: auditTrail.map(toAuditTrail),
         attachments: attachments.map((attachment) => ({
           id: attachment.id,
-          publicId: attachment.publicId,
+          publicId: attachment.publicId || null,
           ownerType: attachment.ownerType as AttachmentOwnerType,
           ownerId: attachment.ownerId,
           ownerLabel: attachment.ownerLabel,
@@ -3792,7 +3783,12 @@ export async function updateMotorcycleFinePayment(
         module: "Motos de Servico",
         entityId: id,
         description: `Pagamento de multa registrado: ${currency(paidAmount)} (Status: ${status}).`,
-        newValue: saved,
+        newValue: {
+          id: saved.id,
+          paidAmount: Number(saved.paidAmount),
+          paymentStatus: saved.paymentStatus,
+          motorcyclePlate: saved.serviceMotorcycle.plate,
+        },
       });
 
       return toMotorcycleFine(saved);
@@ -4346,11 +4342,28 @@ export async function createAttachmentRecord(input: Omit<Attachment, "id" | "cre
         },
       });
       return {
-        ...attachment,
         id: saved.id,
-        publicId: saved.publicId,
+        publicId: saved.publicId || null,
+        ownerType: attachment.ownerType,
+        ownerId: attachment.ownerId,
+        ownerLabel: attachment.ownerLabel,
+        fileName: attachment.fileName,
+        fileType: attachment.fileType,
+        fileSize: attachment.fileSize,
+        url: attachment.url,
+        uploadedBy: attachment.uploadedBy,
+        description: attachment.description || null,
+        module: attachment.module,
+        vehicleId: saved.vehicleId,
+        maintenanceId: saved.maintenanceId,
+        oilChangeId: saved.oilChangeId,
+        fuelLogId: saved.fuelLogId,
+        supplierId: saved.supplierId,
+        partStockId: saved.partStockId,
+        serviceMotorcycleId: saved.serviceMotorcycleId,
+        motorcycleFineId: saved.motorcycleFineId,
         createdAt: saved.createdAt.toISOString(),
-      };
+      } satisfies Attachment;
     },
     (dataset) => {
       dataset.attachments.unshift(attachment);
@@ -4367,11 +4380,7 @@ export async function deleteAttachment(id: string) {
 
       // If it's a Cloudinary file, delete it there too
       if (attachment.publicId && attachment.publicId !== "placeholder") {
-        try {
-          await cloudinary.uploader.destroy(attachment.publicId);
-        } catch (error) {
-          console.error("Erro ao deletar arquivo no Cloudinary:", error);
-        }
+        await deleteFromCloudinary(attachment.publicId);
       }
 
       return { id };
