@@ -13,17 +13,7 @@ const eslintConfig = [
   {
     ignores: [".next/**", "node_modules/**", "coverage/**", "dist/**", "data/**"],
   },
-  ...compat.extends("next/core-web-vitals", "next/typescript").map((c) => ({
-    ...c,
-    plugins: c.plugins
-      ? Object.fromEntries(
-          Object.entries(c.plugins).map(([k, p]) => [
-            k,
-            { ...p, configs: undefined }, // This specifically breaks the circularity in legacy plugins
-          ])
-        )
-      : undefined,
-  })),
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
